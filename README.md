@@ -1,6 +1,12 @@
 > **This is a fork of [gpt-researcher](https://github.com/assafelovic/gpt-researcher).**
 > The retrieval pipeline (hybrid search, RRF fusion, reranking, offline evaluation)
 > is reworked by me. See [EVAL.md](EVAL.md) for evaluation results.
+> **This is a fork of [gpt-researcher](https://github.com/assafelovic/gpt-researcher).**
+> The retrieval pipeline (hybrid search, RRF fusion, reranking, offline evaluation)
+> is reworked by me. See [EVAL.md](EVAL.md) for evaluation results.
+
+**Live Demo:** https://gpt-researcher-hybrid-retrieval.onrender.com
+*(free tier — first request may take ~50s to wake up)*
 
 <div align="center" id="top">
 
