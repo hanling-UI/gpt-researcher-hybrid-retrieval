@@ -1,0 +1,106 @@
+{
+  "query": "rerank 重排模型在 RAG 里怎么用",
+  "must_have": [
+    "精排",
+    "候选",
+    "交叉编码"
+  ],
+  "pages": [
+    {
+      "url": "https://developer.cloud.tencent.com/article/2588231",
+      "raw_content": "构建AI智能体：RAG超越语义搜索：如何用Rerank模型实现检索精度的大幅提升-腾讯云开发者社区-腾讯云\n未闻花名\n构建AI智能体：RAG超越语义搜索：如何用Rerank模型实现检索精度的大幅提升\n原创\n关注作者\n腾讯云\n开发者社区\n文档建议反馈控制台\n首页\n学习\n活动\n专区\n圈层\n工具\nMCP广场\n文章/答案/技术大牛 搜索\n搜索 关闭\n发布\n社区首页 >专栏 >构建AI智能体：RAG超越语义搜索：如何用Rerank模型实现检索精度的大幅提升\n关注\n发布于 2025-11-15 09:50:42\n2K2\n举报\n文章被收录于专栏：AI智能体从入门到实践AI智能体从入门到实践\n一、发轫之始\n在工作和生活中，我们可能经常会遇到一些场景，我们在搜索引擎中输入问题寻求解决方案，返回的却是大量重复的、基础性的、甚至是商业推广的内容。无奈的反复修正我们的检索内容，就是找不到答案，这确实是一大困扰，由于算法的局限性和商业干扰，导致搜索引擎算法倾向于流行度而非质量，商业利益常常凌驾于信息价值之上。我们得到的往往是最多人点击的，而不是最正确的。 如今随着AI的大爆发，我们也在设计AI产品，我们如何突破这种信息茧房，让我们设计的系统反馈的答案更加的精准化，首先我们已经了解到RAG的概念和优势，现在我们继续为RAG插上翅膀，集成结果的重排序Rerank模型，提升产品用户体验和系统信任度，增强搜索问题和结果之间的深层语义关系，从海量信息中精准筛选出最适合的内容，并以易于理解的方式呈现给用户。\n二、 什么是Rerank模型\n重排序（Rerank） 是在检索增强生成（RAG）系统中，对初步检索到的文档结果进行精细化重新排序的关键技术环节。它位于初始检索和最终生成之间，充当\"质检员\"和\"精算师\"的角色，对初步检索到的大量候选文档（例如100-1000个）进行重新评分和排序，将最相关、最准确的少量文档（例如5-10个）排在顶部，然后将其提供给LLM生成最终答案。确保传递给大语言模型（LLM）的上下文材料是最高质量的。主要用于优化初步检索结果的排序，提高最终输出的相关性或准确性。\n可以通俗的将Rerank理解为一位专业的“质检员”或“决赛裁判”：\n初始检索（如FAISS）：像“海选”，快速从数百万选手中选出100位可能符合条件的。\nRerank模型：像“专家评审”，仔细面试这100位选手，从中挑出最顶尖的5位。\nLLM：像“终极BOSS”，基于最顶尖的5位选手的信息，做出最终决策（生成答案）。\n三、为什么需要Rerank\n初始的向量检索器，如基于Embedding的FAISS，虽然速度快，但存在固有局限性：\n语义相似度 ≠ 查询-文档相关性：Embedding模型学习的是广泛的语义相似性，但“相关”是一个更具体、更任务导向的概念。一个文档可能与查询在语义上很接近，但可能并未直接回答查询的问题。\n“词汇不匹配”问题：尽管比关键词搜索好，但Embedding模型有时仍然难以完美解决表述差异的问题。\n精度与召回率的权衡：为了提高召回率（Recall），我们通常会初始检索大量文档（K值较大），但这其中必然包含许多不精确或冗余的文档，直接交给LLM会引入噪声，增加成本并可能导致错误回答。\nRerank模型通过执行更深入的“查询-文档”对交叉分析，专门针对“相关性”进行优化，完美解决了上述问题。\n1. Rerank模型和Embedding模型比较\n特性\n嵌入（Embedding）模型\n重排序（Rerank）模型\n输入\n单段文本\n(Query, Document) 对\n输出\n一个高维向量\n一个相关性分数（标量）\n计算方式\n对称或不对称语义搜索\n交叉编码（Cross-Encoder），深度交互\n速度\n非常快，适合大规模初步检索\n相对慢，适合对少量候选精排\n精度\n良好，但不够精确\n非常高，是相关性判断的专家\n典型用途\n从海量数据中快速召回Top K个候选\n对Top K个候选进行精细重排序\n2. 核心工作原理：交叉编码\n与生成嵌入向度的双编码器（Bi-Encoder） 不同，Rerank模型通常是交叉编码器（Cross-Encoder）。\nBi-Encoder（双塔模型）：查询和文档分别通过编码器（通常是同一个）独立地转换为向量，然后计算向量间的相似度（如余弦相似度）。优势是快，因为文档可以预先编码存储。\nCross-Encoder（交叉编码）：将查询和文档拼接在一起，作为一个完整的序列输入到模型中。模型（如BERT）的注意力机制（Attention）能够同时在查询和文档的所有词元之间进行深度的、精细的交互，从而直接输出一个相关性的分数。优势是精度极高，因为它能真正“理解”Query和Document之间的细微关系。\n3. Rerank的优势\n显著提升答案质量：提供给LLM的上下文质量更高，直接减少幻觉、提高答案准确性。\n降低Token消耗：只需传递更少、更精炼的文档给LLM，节省了输入Token的成本。\n增强系统鲁棒性：即使初始检索不够准确，Rerank也能在一定程度上纠正错误。\n四、Rerank的流程节点和模型选择\n1. Rerank在RAG流程中的位置\n一个集成Rerank的完整RAG流程如下：\n输入：用户查询（Query）。\n初步检索（Recall）：使用向量搜索引擎（如FAISS）从知识库中快速召回Top K个相关文档（K较大，例如100）。\n重排序（Rerank）：将用户查询和初步召回的每一个文档依次组成（Query, Document）对，输入到Rerank模型中获取相关性分数。\n筛选与排序：根据Rerank分数对所有候选文档进行降序排序，并选取Top N个分数最高的文档（N较小，例如5）。\n生成（Generation）：将用户查询和精排后的Top N个文档一起构成提示（Prompt），输入给LLM生成最终答案。\n输出：LLM生成的、基于最相关上下文的答案。\n2. Rerank模型选择\nBGE-Rerank和Cohere Rerank是两种广泛使用的重排序模型，它们在检索增强生成（RAG）系统、搜索引擎优化和问答系统中表现优异。\n2.1 BGE-Rerank模型\nbge-reranker-base / bge-reranker-large：北京智源AI研究院开源的优秀中英双语Rerank模型，非常流行，后者在精度上更优。\n基于Transformer的Cross-Encoder结构，直接计算查询（Query）与文档（Document）的交互相关性得分，可本地部署。\nBAAI/bge-reranker-v2-m3：智源最新的多语言、多功能重排序模型。\n2.2 Cohere Rerank模型\n由Cohere公司提供的商业API服务。\n基于专有的深度学习模型，支持多语言（如rerank-multilingual-v3.0）。\n训练数据：优化了语义匹配，特别适用于混合检索（如结合BM25和向量检索）后的结果优化。\n使用方式：通过API调用，集成到LangChain、LlamaIndex等框架中。\n简单易用，适合快速集成到现有系统，在英文和多语言任务中表现优异。\n更大的模型（Large）通常精度更高，但推理速度更慢。需要在精度和速度之间做出权衡。\n五、集成Rerank完整流程图\n1. 完整流程图\n流程介绍\n1. 初始检索阶段\n用户输入查询：接收用户的自然语言问题\n查询预处理：对查询进行清洗、标准化和分词处理\n向量化查询：使用嵌入模型将查询转换为向量表示\n向量相似度搜索：在向量数据库中进行近似最近邻搜索\n获取Top K候选文档：返回相似度最高的K个文档（K值较大，确保召回率）\n2. 重排序阶段 - 核心环节\n构建查询-文档对：将查询与每个候选文档组合成(Query, Document)对\n重排序模型推理：使用交叉编码器模型对每个对进行深度相关性分析\n按分数重新排序：根据模型输出的相关性分数对文档降序排列\n筛选Top N文档：选择分数最高的N个文档（N值较小，确保精确率）\n3. 生成阶段\n构建提示模板：将精排后的文档与查询组合成LLM可理解的提示\nLLM推理生成：大语言模型基于提供的上下文生成答案\n后处理与格式化：对生成的答案进行精炼、格式化和验证\n4. 知识库预处理流程\n文档预处理：清洗和标准化原始文档\n文档分块：将长文档分割成适当大小的块\n生成文档嵌入：为每个文档块生成向量表示\n向量数据库存储：将文档向量存入向量数据库以备检索\n2. Rerank流程图\n各阶段输入输出示例\n输入: \"如何学习钢琴？\" 输出: 1. 钢琴保养指南 (相似度: 0.82) 2. 音乐理论基础 (相似度: 0.79) 3. 钢琴购买指南 (相似度: 0.77) 4. 钢琴入门指法教程 (相似度: 0.75) 5. 十大钢琴家介绍 (相似度: 0.72) ... (共100个文档)\n2. 重排序阶段\n输入: 初始检索的100个文档 + 查询\"如何学习钢琴？\" 处理: 使用BGE-Reranker计算每个文档与查询的相关性分数 输出: 1. 钢琴入门指法教程 (相关性: 0.95) 2. 钢琴练习曲目推荐 (相关性: 0.92) 3. 音乐理论基础 (相关性: 0.88) 4. 钢琴学习计划制定 (相关性: 0.85) 5. 钢琴师资选择指南 (相关性: 0.82)\n输入: 精排后的5个文档 + 查询\"如何学习钢琴？\" 输出: 学习钢琴应该从基础开始，首先掌握正确的坐姿和手型，然后学习基本的指法。 推荐从《拜厄钢琴基本教程》开始，每天坚持练习30-60分钟。 同时建议学习基础乐理知识，如音符、节奏和和弦等。 最好找一位有经验的老师指导，可以帮助纠正错误姿势和提供个性化建议。\n六、Rerank的使用场景\n推荐使用场景：\n高精度要求：医疗、法律、金融等专业领域\n复杂查询：多概念、抽象或模糊的查询\n关键任务：答案准确性至关重要的应用\n文档质量不均：知识库中包含大量相似或冗余文档\n可忽略场景：\n简单事实查询：\"中国的首都\"、\"浙江的省会\"\n实时性要求极高：需要毫秒级响应的场景\n计算资源有限：无法承担额外推理成本\n七、演示示例\n示例1：苹果公司创始人推测\n1. 基础代码\n使用 bge-reranker模型在基于FAISS的RAG流程中集成Rerank模型。\n代码语言：javascript\n复制\nfrom langchain_community.vectorstores import FAISS\nfrom langchain.embeddings import HuggingFaceEmbeddings\nfrom langchain.schema import Document\nfrom transformers import AutoModelForSequenceClassification, AutoTokenizer\nimport torch\nimport numpy as np # 1. 准备示例知识库和初始检索\n# 初始化一个嵌入模型用于初始检索\nembedding_model = HuggingFaceEmbeddings( model_name=\"sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2\"\n) # 假设的文档库\ndocuments = [ \"苹果公司于1976年由史蒂夫·乔布斯、史蒂夫·沃兹尼亚克和罗纳德·韦恩创立，最初主要生产和销售个人电脑。\", \"苹果公司最著名的产品是iPhone智能手机，它彻底改变了移动通信行业。\", \"水果苹果是一种蔷薇科苹果属的落叶乔木果实，营养价值高，富含维生素和纤维。\", \"苹果公司在2023年发布了其首款混合现实头显设备Apple Vision Pro。\", \"吃苹果有助于促进消化和增强免疫力，是一种健康零食。\", \"蒂姆·库克是苹果公司的现任首席执行官，于2011年接替史蒂夫·乔布斯。\"\n# 转换为LangChain Document对象\ndocs = [Document(page_content=text) for text in documents] # 构建FAISS向量库\nvectorstore = FAISS.from_documents(docs, embedding_model) # 用户查询\nquery = \"苹果公司的创始人是谁？\" # 初始检索：使用向量库召回Top K个文档（这里K=4）\ninitial_retrieved_docs = vectorstore.similarity_search(query, k=4)\nprint(\"=== 初始检索结果（基于语义相似度）===\")\nfor i, doc in enumerate(initial_retrieved_docs): print(f\"{i+1}. [相似度得分: N/A] {doc.page_content}\") # 2. 初始化Rerank模型\n# 我们使用 `BAAI/bge-reranker-base`，这是一个强大的中英双语Reranker\nmodel_name = \"BAAI/bge-reranker-base\"\ntokenizer = AutoTokenizer.from_pretrained(model_name)\nmodel = AutoModelForSequenceClassification.from_pretrained(model_name)\nmodel.eval() # 设置为评估模式 # 3. 重排序函数\ndef rerank_docs(query, retrieved_docs, model, tokenizer, top_n=3): \"\"\" 对检索到的文档进行重排序 Args: query: 用户查询 retrieved_docs: 检索到的文档列表 model: 重排序模型 tokenizer: 重排序模型的tokenizer top_n: 返回顶部多少个文档 Returns: sorted_docs: 按相关性分数降序排列的文档列表 scores: 对应的分数列表 \"\"\" # 构建（query, doc）对 pairs = [(query, doc.page_content) for doc in retrieved_docs] # Tokenize所有文本对 with torch.no_grad(): # 禁用梯度计算，加快推理速度 inputs = tokenizer( pairs, padding=True, truncation=True, return_tensors='pt', max_length=512 ) # 模型前向传播，计算分数 scores = model(**inputs).logits.squeeze(dim=-1).float().numpy() # 将分数和文档打包在一起 doc_score_list = list(zip(retrieved_docs, scores)) # 按分数降序排序 doc_score_list.sort(key=lambda x: x[1], reverse=True) # 解包，返回Top N个文档和它们的分数 sorted_docs = [doc for doc, score in doc_score_list[:top_n]] sorted_scores = [score for doc, score in doc_score_list[:top_n]] return sorted_docs, sorted_scores # 4. 执行重排序\nreranked_docs, reranked_scores = rerank_docs(query, initial_retrieved_docs, model, tokenizer, top_n=3) # 5. 打印结果\nprint(\"\\n=== 重排序后结果（基于交叉编码相关性）===\")\nfor i, (doc, score) in enumerate(zip(reranked_docs, reranked_scores)): print(f\"{i+1}. [相关性分数: {score:.4f}] {doc.page_content}\") # 6. 将精排后的上下文传递给LLM（这里用打印模拟）\ncontext_for_llm = \"\\n\".join([doc.page_content for doc in reranked_docs])\nprompt = f\"\"\"\n基于以下上下文，请回答问题。\n上下文：\n{context_for_llm}\n=== 最终输出最优的匹配结果 ===\n问题：{query}\n答案：{reranked_docs[0].page_content}\nprint(f\"\\n=== 最终提供给LLM的Prompt ===\")\nprint(prompt)\n2. 执行结果\n=== 初始检索结果（基于语义相似度）===\n1. [相似度得分: N/A] 苹果公司于1976年由史蒂夫·乔布斯、史蒂夫·沃兹尼亚克和罗纳德·韦恩创立，最初主要生产和销售个人电脑 。\n2. [相似度得分: N/A] 蒂姆·库克是苹果公司的现任首席执行官，于2011年接替史蒂夫·乔布斯。\n3. [相似度得分: N/A] 苹果公司在2023年发布了其首款混合现实头显设备Apple Vision Pro。\n4. [相似度得分: N/A] 水果苹果是一种蔷薇科苹果属的落叶乔木果实，营养价值高，富含维生素和纤维。 === 重排序后结果（基于交叉编码相关性）===\n1. [相关性分数: 9.3700] 苹果公司于1976年由史蒂夫·乔布斯、史蒂夫·沃兹尼亚克和罗纳德·韦恩创立，最初主要生产和销售个人电\n脑。\n2. [相关性分数: 4.5305] 蒂姆·库克是苹果公司的现任首席执行官，于2011年接替史蒂夫·乔布斯。\n3. [相关性分数: -6.0679] 苹果公司在2023年发布了其首款混合现实头显设备Apple Vision Pro。 === 最终提供给LLM的Prompt === 基于以下上下文，请回答问题。\n苹果公司于1976年由史蒂夫·乔布斯、史蒂夫·沃兹尼亚克和罗纳德·韦恩创立，最初主要生产和销售个人电脑。\n蒂姆·库克是苹果公司的现任首席执行官，于2011年接替史蒂夫·乔布斯。\n苹果公司在2023年发布了其首款混合现实头显设备Apple Vision Pro。 === 最终输出最优的匹配结果 === 问题：苹果公司的创始人是谁？\n答案：苹果公司于1976年由史蒂夫·乔布斯、史蒂夫·沃兹尼亚克和罗纳德·韦恩创立，最初主要生产和销售个人电脑。\n3. 代码详解\n1. 初始设置：\n使用sentence-transformers的嵌入模型和FAISS构建一个简单的向量检索库。\n定义了一个有歧义的查询“苹果公司的创始人是谁？”。注意，知识库中既包含科技公司“苹果”，也包含水果“苹果”。\n2. 初始检索：\nvectorstore.similarity_search(query, k=4) 召回了4个最“语义相似”的文档。\n由于Embedding模型的理解是广义语义的，水果“苹果”的文档也可能被召回（例如，文档3和5）。\n3. 初始化Rerank模型：\n使用transformers库加载预训练的BAAI/bge-reranker-base模型和其对应的分词器。\nmodel.eval()将模型设置为评估模式，这会关闭Dropout等训练层，保证输出的一致性。\n4. 重排序函数 rerank_docs：\n构建对：将查询和每一个检索到的文档内容组成(Query, Document)对。\nTokenize：使用tokenizer将所有这些文本对处理成模型可接受的输入格式（input_ids, attention_mask等）。padding=True和truncation=True确保了不同长度的文本对可以被批量处理。\n模型推理：将处理好的输入传递给模型。with torch.no_grad()块确保不计算梯度，大幅减少内存消耗并加快推理速度。模型的输出是一个分数，分数越高代表相关性越强。\n排序与筛选：根据模型计算出的相关性分数对文档进行降序排序，并返回Top N个文档。\n5. 结果分析：\n初始检索结果：可能包含水果苹果的文档，因为它们也包含“苹果”这个词，语义上有相似性。\n重排序后结果：Rerank模型作为“相关性专家”，能够精确理解“苹果公司”这个特定实体的查询意图。它会给科技公司苹果的文档打出非常高的分数，而给水果苹果的文档打出很低的分数。最终，Top结果中只会留下最相关的科技公司苹果的文档。\n4. 模型引用\n示例中使用了两个模型sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2和BAAI/bge-reranker-base，都可以本地化部署，前者是一个嵌入模型用于初始检索，它将句子和段落映射到384维的密集向量空间中，可用于聚类或语义搜索等任务；后者前文介绍过，是专门做Rerank的模型，它直接计算查询（Query）与文档（Document）的交互相关性得分，也可本地部署。\n在代码运行时，模型检测到本地没有，会自动从线上下载：\n下载完成的模型目录：\n模型下载完成后，再次运行时会直接从本地读取！\n从示例输出可以清晰看到，重排序后，直接包含答案“创始人”的文档排到了第一，并且所有排名靠前的文档都是关于科技公司的，水果相关的文档被有效地过滤掉了。这样提供给LLM的上下文质量极高，能保证生成答案的准确性。 通过这个流程，Rerank模型极大地提升了RAG系统的最终表现，是其从可用到好用的关键升级。\n示例2：如何学习钢琴\nfrom transformers import AutoModelForSequenceClassification, AutoTokenizer class BGEReranker: def __init__(self, model_name=\"BAAI/bge-reranker-base\"): self.tokenizer = AutoTokenizer.from_pretrained(model_name) self.model = AutoModelForSequenceClassification.from_pretrained(model_name) self.model.eval() # 设置为评估模式 def rerank(self, query: str, documents: list, top_k: int = 5): \"\"\" 对文档进行重排序 :param query: 用户查询 :param documents: 候选文档列表 :param top_k: 返回前K个文档 :return: 排序后的文档和分数 \"\"\" # 构建查询-文档对 pairs = [(query, doc) for doc in documents] # 特征编码 with torch.no_grad(): inputs = self.tokenizer( pairs, padding=True, truncation=True, return_tensors='pt', max_length=512 ) # 计算相关性分数 scores = self.model(**inputs).logits.squeeze(dim=-1).float().numpy() # 组合文档和分数 scored_docs = list(zip(documents, scores)) # 按分数降序排序 scored_docs.sort(key=lambda x: x[1], reverse=True) return scored_docs[:top_k] # 使用示例\nif __name__ == \"__main__\": # 初始化重排序模型 reranker = BGEReranker() # 用户查询 query = \"如何学习钢琴？\" # 初始检索结果（假设从FAISS获取） initial_docs = [ \"钢琴保养和清洁方法\", \"音乐理论基础入门\", \"钢琴购买指南：如何选择第一台钢琴\", \"钢琴入门指法教程：从零开始学习\", \"十大著名钢琴家及其作品\", \"钢琴练习曲目推荐：适合初学者\" ] print(\"初始检索结果:\") for i, doc in enumerate(initial_docs): print(f\"{i+1}. {doc}\") # 应用重排序 reranked_docs = reranker.rerank(query, initial_docs, top_k=3) print(\"\\n重排序后结果:\") for i, (doc, score) in enumerate(reranked_docs): print(f\"{i+1}. [分数: {score:.4f}] {doc}\") print(\"\\n最优的匹配结果:\") print(reranked_docs[0][0])\n初始检索结果:\n1. 钢琴保养和清洁方法\n2. 音乐理论基础入门\n3. 钢琴购买指南：如何选择第一台钢琴\n4. 钢琴入门指法教程：从零开始学习\n5. 十大著名钢琴家及其作品\n6. 钢琴练习曲目推荐：适合初学者 重排序后结果:\n1. [分数: 1.7239] 钢琴入门指法教程：从零开始学习\n2. [分数: 0.7639] 音乐理论基础入门\n3. [分数: -1.1614] 钢琴练习曲目推荐：适合初学者 最优的匹配结果:\n钢琴入门指法教程：从零开始学习\n八、总结\n重排序（Rerank）是RAG系统中提升精度的关键技术，它能够深度理解查询和文档间的语义关系、精细排序初步检索结果筛选最相关文档、显著提升最终生成答案的质量和准确性。\n虽然引入了一定的计算开销，但在大多数重视准确性的应用场景中，重排序带来的性能提升远远超过了其成本，是现代RAG系统不可或缺的组件。\n对于精度要求极高的场景（如医疗、法律），强烈推荐使用Rerank。对于延迟敏感或资源有限的场景，可以酌情省略或减少重排序的文档数量（K）。选择合适的重排序策略和模型，能够让RAG系统从能用升级到好用，真正发挥检索增强生成的全部潜力。\n原创声明：本文系作者授权腾讯云开发者社区发表，未经许可，不得转载。\n如有侵权，请联系 cloudcommunity@tencent.com 删除。\n第四期热点征文-大模型技术\n#RAG检索\n#Rerank重排序\n目录\n社区\n技术文章\n技术问答\n技术沙龙\n技术视频\n学习中心\n技术百科\n技术专区\n自媒体同步曝光计划\n邀请作者入驻\n自荐上首页\n技术竞赛\n腾讯云最具价值专家\n腾讯云架构师技术同盟\n腾讯云创作之星\n腾讯云TDP\n关于\n社区规范\n免责声明\n联系我们\n友情链接\nMCP广场开源版权声明\n腾讯云开发者\n扫码关注腾讯云开发者\n领取腾讯云代金券\n热门产品\n域名注册\n云服务器\n区块链服务\n消息队列\n网络加速\n云数据库\n域名解析\n云存储\n视频直播\n热门推荐\n人脸识别\n腾讯会议\n企业云\nCDN加速\n视频通话\n图像分析\nMySQL 数据库\nSSL 证书\n语音识别\n更多推荐\n数据安全\n负载均衡\n短信\n文字识别\n云点播\n大数据\n小程序开发\n网站监控\n数据迁移\nCopyright © 2013 - 2026 Tencent Cloud. All Rights Reserved. 腾讯云 版权所有 深圳市腾讯计算机系统有限公司 ICP备案/许可证号：粤B2-20090059 粤公网安备44030502008569号\n腾讯云计算（北京）有限责任公司 京ICP证150476号 | 京ICP备11018762号\n问题归档专栏文章快讯文章归档关键词归档开发者手册归档开发者手册 Section 归档",
+      "image_urls": [
+        {
+          "url": "https://qccommunity.qcloudimg.com/image/new.png",
+          "score": 0
+        },
+        {
+          "url": "https://developer.qcloudimg.com/http-save/10011/481ad7f02ca6c2e80c73a08434dfb424.jpg",
+          "score": 0
+        },
+        {
+          "url": "https://developer.qcloudimg.com/http-save/11883445/054fcad5c5d23226fa8344a307a3ad76.webp",
+          "score": 0
+        },
+        {
+          "url": "https://developer.qcloudimg.com/http-save/11883445/e353fef2222c17f5d5d423fea673019c.png",
+          "score": 0
+        },
+        {
+          "url": "https://developer.qcloudimg.com/http-save/11883445/1b06eebfdb3c531cf95c7657ad5dbaf5.png",
+          "score": 0
+        },
+        {
+          "url": "https://developer.qcloudimg.com/http-save/11883445/275892d16af0e4a266a1b07cdc423155.png",
+          "score": 0
+        },
+        {
+          "url": "https://developer.qcloudimg.com/http-save/11883445/ec325a3b8fede7d98daddb7e8eca2f69.png",
+          "score": 0
+        },
+        {
+          "url": "https://qcloudimg.tencent-cloud.cn/raw/a8907230cd5be483497c7e90b061b861.png?imageView2/2/w/200",
+          "score": 0
+        },
+        {
+          "url": "https://qcloudimg.tencent-cloud.cn/raw/eed02831a0e201b8d794c8282c40cf2e.png",
+          "score": 0
+        }
+      ],
+      "title": "构建AI智能体：RAG超越语义搜索：如何用Rerank模型实现检索精度的大幅提升-腾讯云开发者社区-腾讯云"
+    },
+    {
+      "url": "https://juejin.cn/post/7507564752434167845",
+      "raw_content": "在RAG（检索增强生成）技术中，rerank（重排序）是对初步检索结果进行再次排序的关键步骤，目的是让与用户查询最相关、最准确的文档排在前面，从而帮助大语言模型（LLM）生成更高质量的答案。下面用最简单的语言介绍rerank的基础知识、作用、常用方法，并附带实用代码示例，帮助大家快速理解和应用。\n什么是Rerank？为什么需要它？\nRAG先用向量检索或关键词检索快速找到一批可能相关的文档（称为候选文档）。\n这些候选文档排序通常基于简单的相似度分数（比如向量距离、关键词匹配度），但这种排序只看表面相似度，容易把不相关或质量差的文档排在前面。\nrerank就是对这批候选文档再做一次“精细排序”，把真正最相关、最有用的文档排到最前面。\n这样，后续的大语言模型生成答案时，能优先利用高质量上下文，提升回答的准确度和效率。\n简单比喻：就像你去图书馆找资料，先快速抓了一堆书，但里面有些不太相关。rerank就是帮你从这堆书中挑出最有用的几本，让你查资料更快更准\nRerank解决的核心问题\n克服初步检索的局限：向量检索只看向量距离，忽略了文本的深层语义和逻辑，容易出现误差。\n剔除无关信息，减少干扰：初步检索的上下文里有很多无关内容，rerank能降低这些内容的权重，减少对LLM生成的负面影响。\n提高生成效率和准确率：更精准的上下文意味着LLM输入的token更有效，推理速度更快，答案更准确。\n融合多种特征：rerank不仅用相似度，还能结合文档长度、主题、实体频率等多维度信息进行综合排序。\n整合多路检索结果：当有多个检索系统时，rerank能统一排序，提升整体效果\n常见的Rerank算法和模型\n1. 基于深度学习的rerank模型\nBGE-Reranker（智源开源） ：支持中英文，输入查询和文档对，输出相关性分数，轻量且效果好，适合实际部署。\nCohere Rerank（商业API） ：效果优异，能显著提升答案质量，但收费。\nBig-Reranker系列（开源） ：性能接近Cohere，适合无付费需求。\n基于BERT、RoBERTa等预训练模型微调的rerank：通过训练让模型更懂查询和文档的语义匹配\n2. 基于大语言模型（LLM）的rerank方法\nZero-shot rerank（提示工程） ：用GPT-4、ChatGPT等大模型，设计提示让模型直接给文档排序，理解更深层语义。\nRankGPT等端到端排序：让LLM输出完整排序列表，配合滑动窗口解决输入长度限制。\n微调LLM rerank：对大模型专门微调rerank任务，提升准确率，但成本高\n3. 多阶段rerank策略\n粗排+精排：先用BM25或向量相似度做快速粗排，再用深度模型或LLM做精排。\n融合多特征评分：结合检索分、文档特征、上下文信息等综合评分。\n结合外部知识：利用领域知识库、常识推理辅助排序，提升专业性和准确性\nRerank在RAG流程中的位置\ngraph LR\nA[用户查询] --> B[初步检索（向量/关键词）]\nB --> C[Rerank重排序]\nC --> D[大语言模型生成回答]\nRerank位于初步检索和生成模型之间，是连接检索和生成的关键环节。\n它保证传给LLM的上下文是最相关、最有用的，避免无关信息干扰\n代码示例：使用BGE-Reranker进行rerank\n下面是一个用Python调用智源BGE-Reranker对检索结果进行重排序的简单示例。\n# 安装依赖（如果没装）\n# pip install pymilvus[model] from pymilvus.model.reranker import BGERerankFunction # 创建rerank实例\nbge_rf = BGERerankFunction( model_name=\"BAAI/bge-reranker-v2-m3\", # 模型名称 device=\"cpu\" # 使用CPU或GPU\n) # 用户查询\nquery = \"1956年人工智能作为学科的诞生事件是什么？\" # 初步检索得到的候选文档列表\ndocuments = [ \"1950年，艾伦·图灵发表了开创性论文，提出了图灵测试。\", \"1956年达特茅斯会议被认为是人工智能诞生的标志，约翰·麦卡锡等人首次提出人工智能一词。\", \"1951年，图灵开发了第一个国际象棋程序。\", \"1955年，逻辑理论家程序诞生，是第一个真正的AI程序。\"\n] # 进行rerank，返回相关性分数排序结果\nrerank_results = bge_rf(query, documents) # 输出排序后的文档及分数\nfor res in rerank_results: idx = res['index'] score = res['score'] print(f\"相关度分数: {score:.4f}，文档: {documents[idx]}\")\n运行结果示例：\n相关度分数: 0.95，文档: 1956年达特茅斯会议被认为是人工智能诞生的标志，约翰·麦卡锡等人首次提出人工智能一词。\n相关度分数: 0.80，文档: 1950年，艾伦·图灵发表了开创性论文，提出了图灵测试。\n相关度分数: 0.60，文档: 1955年，逻辑理论家程序诞生，是第一个真正的AI程序。\n相关度分数: 0.40，文档: 1951年，图灵开发了第一个国际象棋程序。\n可以看到，rerank把最相关的文档排在了最前面，方便后续生成模型调用\nRerank实战小贴士\nTopK选择：rerank一般对初步检索得到的Top30或Top50文档进行排序，避免计算资源浪费。\n多阶段排序：先用快速粗排筛选，再用rerank精排，兼顾效率和准确。\n结合上下文：对多轮对话或复杂查询，rerank时考虑上下文信息，提升匹配度。\n避免无关信息干扰：rerank后只保留相关度高的文档，减少LLM输入token数，提高推理速度。\n模型选择：开源BGE-Reranker适合中英文场景，商业Cohere效果更好但收费，选择时结合业务需求\n总结\n主题\n说明\nrerank定义\n对初步检索结果做第二次排序，提升相关文档优先级\n作用\n提高检索结果的语义相关性，减少无关信息，提升生成准确率\n常用模型\nBGE-Reranker（开源）、Cohere Rerank（商用）、BERT微调模型、LLM提示工程rerank\n流程位置\n位于向量检索后、大语言模型生成前的关键环节\n技术特点\n结合深度语义理解、多特征融合、多阶段排序，兼顾效率与准确性\nrerank是RAG系统中不可缺少的“精筛”步骤，帮助大模型更准确理解查询，生成更优质的答案，提升用户体验\n通过以上介绍和示例，相信你已经对rerank有了清晰、全面的理解。无论是构建自己的RAG系统，还是优化已有检索生成流程，合理使用rerank都是提升效果的关键。欢迎尝试开源BGE-Reranker，结合大语言模型，打造高效智能的问答系统！",
+      "image_urls": [],
+      "title": "RAG中的Rerank（重排序）简单易懂全面介绍及实战案例在RAG（检索增强生成）技术中，rerank（重排序）是对初步 - 掘金"
+    },
+    {
+      "url": "https://www.woshipm.com/ai/6270488.html",
+      "raw_content": "在RAG系统中，重排序（Rerank）是连接检索与生成的关键一环。本文深入解析Rerank模块的核心逻辑与主流技术路径，结合实际应用场景，帮助产品人理解如何通过重排序提升AI问答系统的准确性与响应质量。\n向量化与重排序（rerank）是相辅相成的两个模块， 他们两个搭配起来，共同解决检索准确性的问题。\n向量检索的核心：在海量数据中，检索与跟查询内容相近的内容。一般称为内容召回。例如一次性召回 50 条内容\nrerank的核心：基于召回的内容，再做更加精准的排序。例如将上面 50 条内容，做一次更加精准重排序，获取到 top10 内容；\n为什么rerank准确这么重要？\n生成答案的大模型，如果自己没有训练的话，他都是通用的识别能力，对于公司/行业内的专有名词/特地话术的区分能力很差。\n如果你给了准确的知识，他能够生成准确的答案，但是如果你给的非常接近的错误的知识，他分辨能力较差，非常容易生成错误的答案。\nrerank模型\n本质就是针对重排序特别训练的大模型。我自己最早搭建 demo 的时候，并没有使用 rerank 模型，直接用一个火山 doubao 1.5模型， 让doubao 1.5 直接针对内容的相关性进行排序。这个也让我了解到了专门的 rerank 大模型到底改进了什么？\n速度更快：如果是使用通用的大模型对内容进行排序，耗时会很长，doubao的模型基本都是20s+，如果参与rerank环节的引用知识更多，那么排序时间就更长了。但是专门的rerank模型基本秒级就可以完成同等的排序\n排序分数更稳定：对于同一批知识，大模型的排序结果每次排序结果不尽相同，当你复现case的时候非常痛苦，但是专门的rerank模型排序结果是很稳定的；\n模型推荐\n一般不是很难排序的模型 bge-m3就足够了，模型本身小，运行速度快。如果排序比较难的话， 可以尝试 qwen rerank 8B 的模型，但是这个模型有点大，对于服务器配置要求比较高。\n经验总结与反思\n希望大家能够理解真正的原理，各个板块存在的意义，不然很容易人云亦云。\n真的需要向量化吗？\n向量化的时间相对来说比较高，需要搞自己向量化数据库，选择合适的向量化模型，但是我们真的有必要搞向量化吗？\n向量化其实主要是方便从海量数据中找到可能的候选内容，供 rerank 使用。针对企业级场景，很多公司的内容并没有那么多，我们完全可以把所有的知识全量 rerank，直接获取结果就好了。我自己测试 500 条知识，rerank 的话几秒就完成了，做个并发的话，速度会更快。\n需要自己训练模型吗？\n通用的模型在理解一些行业专有名词的时候，效果不佳。如果这个成为了效果的瓶颈了，再考虑做模型微调。一般情况下，选个市面上通用的 rerank 模型就够用了。\n微调的话，建议优先训练 rerank 模型，因为它是最终的决定性环节。如果rerank 效果好，向量化效果差，直接在向量化环节搞个 top100，然后交由 rerank 进行排序选出最好的 top10。\n后续\n上面聊的只是一路检索，但是现在我们使用的基本都是多路检索，后续再给大家介绍一下多路检索，以及后续生成环节如何处理。\n本文由 @寻走 原创发布于人人都是产品经理。未经作者许可，禁止转载\n题图来自Unsplash，基于CC0协议\n收藏已收藏{{ postmeta.bookmark }} 点赞已赞{{ postmeta.postlike }}\n更多精彩内容，请关注人人都是产品经理微信公众号或下载App\nRAGRerank技术原理\n海报\n分享自己 LLM 与 Agent 实战经\n9篇作品 17559总阅读量\n为什么你画的流程图开发总说看不懂？\n03-3123539 浏览\nCRM3.0架构下，智慧服务3.0的产品构成和功能\n04-067119 浏览\n工单系统——深度解析高效的功能架构（上）\n04-0315988 浏览\n拼多多出海，卷起新一轮电商大战\n05-254225 浏览\n高德也来卷跑腿市场，网约车的生意这么不好做了？\n12-204113 浏览\n评论\n评论请登录\n汪仔4931\n坐等多路检索\n最近 来自浙江 回复\n互联网围剿知乎脉脉匿名区\n06-252027 浏览\n请停止小红书的无效种草\n10-104652 浏览\n阿里、百度、值得买齐发声，电商的“AIGC式”进化\n06-074586 浏览",
+      "image_urls": [
+        {
+          "url": "https://static.woshipm.com/tag/1101_1@2x.png ",
+          "score": 0
+        },
+        {
+          "url": "https://image.woshipm.com/2023/04/14/91d2911a-da9e-11ed-95a1-00163e0b5ff3.png",
+          "score": 0
+        },
+        {
+          "url": "https://static.woshipm.com/tag/1601_1@2x.png ",
+          "score": 0
+        },
+        {
+          "url": "https://static.woshipm.com/tag/1101_1@2x.png ",
+          "score": 0
+        },
+        {
+          "url": "https://image.woshipm.com/wp-files/2023/03/z5f0A0QukYD89y34v0o4.png!/both/120x80",
+          "score": 0
+        },
+        {
+          "url": "https://image.woshipm.com/wp-files/2023/04/5TSaEdeXhUKkDvWLTwae.jpg!/both/120x80",
+          "score": 0
+        },
+        {
+          "url": "https://image.woshipm.com/wp-files/2023/04/F1ViP40kdjeb084YnAu6.jpg!/both/120x80",
+          "score": 0
+        },
+        {
+          "url": "https://image.woshipm.com/2023/04/13/f643bb62-d9de-11ed-8440-00163e0b5ff3.jpg!/both/120x80",
+          "score": 0
+        },
+        {
+          "url": "https://image.yunyingpai.com/wp/2023/12/kugo1UGl3U0rxVaRdL4d.png!/both/120x80",
+          "score": 0
+        },
+        {
+          "url": "https://image.woshipm.com/more.svg",
+          "score": 0
+        }
+      ],
+      "title": "RAG全系列之《重排序 Rerank 》 | 人人都是产品经理"
+    }
+  ]
+}
