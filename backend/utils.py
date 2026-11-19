@@ -1,3 +1,4 @@
+import asyncio
 import aiofiles
 import urllib
 import mistune
@@ -95,12 +96,18 @@ async def write_md_to_pdf(text: str, filename: str = "") -> str:
         # Set base_url to current directory for resolving any remaining relative paths
         base_url = os.path.abspath(".")
         from md2pdf.core import md2pdf
-        md2pdf(
-               file_path,
-               raw=processed_text,
-               css=css_path,
-               base_url=base_url,
-            )
+        # WeasyPrint 是同步 CPU 密集型渲染，一份长报告要几十秒。
+        # 直接在 async 函数里调用会**阻塞事件循环**：期间 WebSocket 心跳、
+        # 报告流、后续的 path 消息全部发不出去，连接被中间层判定超时断开，
+        # 前端就一直停在"研究进行中"（转圈、聊天框不出现、下载条不出来）。
+        # to_thread 把它丢到线程池，事件循环照常处理心跳与消息。
+        await asyncio.to_thread(
+            md2pdf,
+            file_path,
+            raw=processed_text,
+            css=css_path,
+            base_url=base_url,
+        )
         print(f"Report written to {file_path}")
     except Exception as e:
         print(f"Error in converting Markdown to PDF: {e}")
@@ -128,15 +135,15 @@ async def write_md_to_word(text: str, filename: str = "") -> str:
     try:
         from docx import Document
         from htmldocx import HtmlToDocx
-        # Convert report markdown to HTML
-        html = mistune.html(text)
-        # Create a document object
-        doc = Document()
-        # Convert the html generated from the report to document format
-        HtmlToDocx().add_html_to_document(html, doc)
 
-        # Saving the docx document to file_path
-        doc.save(file_path)
+        def _convert() -> None:
+            # 同理：python-docx 的转换与写盘也是同步的
+            html = mistune.html(text)
+            doc = Document()
+            HtmlToDocx().add_html_to_document(html, doc)
+            doc.save(file_path)
+
+        await asyncio.to_thread(_convert)
 
         print(f"Report written to {file_path}")
 

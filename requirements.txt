@@ -47,6 +47,7 @@ numpy>=2.0.0,<2.5.0
 
 # Utilities
 aiofiles>=23.2.1
+aiohttp>=3.9.0  # online_document.py 顶层直接 import，缺了 CI 的 import 检查会挂
 httpx>=0.28.1
 websockets>=13.1
 requests>=2.31.0

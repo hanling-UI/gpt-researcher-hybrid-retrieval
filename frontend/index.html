@@ -385,12 +385,27 @@
             <a target="_blank" href="https://github.com/assafelovic/gpt-researcher">GitHub</a> |
             <a target="_blank" href="https://discord.gg/spBgZmm3Xe">Discord</a>
         </p>
-        <p>GPT Researcher &copy; 2024</p>
+        <p>GPT Researcher &copy; <span id="footerYear">2026</span></p>
     </footer>
     <script src="/site/vendor/js/showdown.min.js"></script>
     <script src="/site/vendor/js/purify.min.js"></script>
     <script src="/site/scripts.js"></script>
     <script>
+        // 页脚年份取当前年，避免像原来那样写死 2024
+        const footerYearEl = document.getElementById('footerYear');
+        if (footerYearEl) footerYearEl.textContent = new Date().getFullYear();
+
+        // 图片加载失败（防盗链 / 404）时直接隐藏，避免页面上出现一堆破图标。
+        // 用捕获阶段监听，才能拦到动态插入的 <img>（报告正文里的配图）。
+        document.addEventListener('error', (event) => {
+            const el = event.target;
+            if (el && el.tagName === 'IMG') {
+                el.style.display = 'none';
+                const alt = el.alt || '图片';
+                console.warn('图片加载失败，已隐藏：', alt, el.src);
+            }
+        }, true);
+
         // Auto-resize textarea as content grows
         const taskTextarea = document.getElementById('task');
         if (taskTextarea) {
