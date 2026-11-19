@@ -1,6 +1,6 @@
 # 精简版镜像：去掉浏览器（本方案用 bs 解析 HTML），保留 PDF 所需的 pango 系统库
 # 原版 Dockerfile 见 git 历史：git show HEAD~1:Dockerfile
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
