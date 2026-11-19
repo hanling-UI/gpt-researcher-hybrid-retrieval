@@ -33,8 +33,13 @@ const GPTResearcher = (() => {
   // 最近一次报告的 Markdown 正文。PDF/Word 导出把它随请求发给服务端，
   // 不再依赖 outputs/ 里的文件（容器重启就没了）。
   let lastReportMarkdown = '';
+  // 记录上一次 UI 状态：report_finished 与 path 都会调用 updateState('finished')，
+  // 重复进入会重复 initChat()——清空聊天记录、重复绑定发送按钮（点一次发两次）。
+  let lastUiState = null;
 
   // 通过 POST 把正文交给服务端即时转换（无状态导出）
+  // 通过"提交任务 + 轮询"导出 PDF/Word：
+  // 生成任务在后台跑，每个请求都是毫秒级，不会撞上平台的反向代理超时。
   const exportReport = async (format, markdownOverride) => {
     const markdown = markdownOverride || lastReportMarkdown || reportContent || '';
     if (!markdown || markdown.trim().length < 20) {
@@ -43,51 +48,68 @@ const GPTResearcher = (() => {
     }
 
     const label = format === 'pdf' ? 'PDF' : 'Word';
-    // PDF 需要新标签页预览：必须在点击的同步阶段先把窗口打开，
-    // 否则 fetch 之后再 window.open 会被浏览器的弹窗拦截器挡掉。
+    // PDF 要在点击的同步阶段先开窗口，否则弹窗拦截器会挡掉
     const previewWindow = format === 'pdf' ? window.open('', '_blank') : null;
 
-    showToast(`正在生成 ${label}，首次可能需要 1~3 分钟…`, 8000);
+    showToast(`正在生成 ${label}，首次可能需要 1~3 分钟…`, 6000);
+    if (previewWindow) {
+      previewWindow.document.write('<p style="font-family:sans-serif;padding:2rem">正在生成 PDF，请稍候…</p>');
+    }
 
     try {
-      const response = await fetch('/api/export', {
+      const submit = await fetch('/api/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          markdown: markdown,
-          format: format,
-          title: (document.getElementById('task') || {}).value || 'report',
-        }),
+        body: JSON.stringify({ markdown: markdown, format: format }),
       });
 
-      if (!response.ok) {
-        let detail = response.status;
-        try {
-          const data = await response.json();
-          detail = data.detail || detail;
-        } catch (e) { /* 非 JSON 响应，保留状态码 */ }
+      if (!submit.ok) {
+        let detail = submit.status;
+        try { detail = (await submit.json()).detail || detail; } catch (e) { /* 忽略 */ }
         if (previewWindow) previewWindow.close();
-        showToast(`生成失败：${detail}`);
+        showToast(`提交失败：${detail}`);
         return;
       }
 
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+      const { job_id: jobId } = await submit.json();
 
+      // 轮询任务状态，最多等 5 分钟
+      const deadline = Date.now() + 5 * 60 * 1000;
+      let status = 'running';
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const poll = await fetch(`/api/export/job/${jobId}`);
+        if (!poll.ok) break;
+        const info = await poll.json();
+        status = info.status;
+        if (status !== 'running') {
+          if (status === 'failed') {
+            if (previewWindow) previewWindow.close();
+            showToast(`生成失败：${info.error || '未知错误'}`);
+          }
+          break;
+        }
+      }
+
+      if (status !== 'done') {
+        if (previewWindow) previewWindow.close();
+        if (status === 'running') showToast('生成超时，请稍后重试或改用 Markdown');
+        return;
+      }
+
+      const fileUrl = `/api/export/file/${jobId}`;
       if (format === 'pdf') {
-        if (previewWindow) previewWindow.location = url;
-        else window.open(url, '_blank');
+        if (previewWindow) previewWindow.location = fileUrl;
+        else window.open(fileUrl, '_blank');
       } else {
         const link = document.createElement('a');
-        link.href = url;
+        link.href = fileUrl;
         link.download = 'report.docx';
         document.body.appendChild(link);
         link.click();
         link.remove();
       }
-
-      // 给浏览器留足时间读取 blob，再释放
-      setTimeout(() => URL.revokeObjectURL(url), 120000);
+      showToast(`${label} 已就绪`);
     } catch (error) {
       console.error('导出失败:', error);
       if (previewWindow) previewWindow.close();
@@ -1417,6 +1439,12 @@ const GPTResearcher = (() => {
   }
 
   const updateState = (state) => {
+    // 同一个状态重复进入直接返回（只有 finished 会重复到达）
+    if (state === 'finished' && lastUiState === 'finished') {
+      return;
+    }
+    lastUiState = state;
+
     var status = ''
     switch (state) {
       case 'in_progress':

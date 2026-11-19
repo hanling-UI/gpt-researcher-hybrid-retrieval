@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -193,12 +194,16 @@ async def read_report(request: Request, research_id: str):
 
 
 # Simplified API routes - no database persistence
-@app.post("/api/export")
-async def export_report_inline(payload: ExportRequest):
-    """把前端传来的 Markdown 即时转换成 PDF / DOCX 并返回文件流。
+_EXPORT_JOBS: dict[str, dict] = {}
 
-    这是无状态导出：不读 outputs/、不依赖之前生成过什么文件，
-    所以容器重启、休眠唤醒都不会 404。
+
+@app.post("/api/export")
+async def start_export(payload: ExportRequest):
+    """提交一个导出任务，**立刻返回** job_id。
+
+    为什么不在请求里直接生成：免费实例只有 0.1 CPU，中文 PDF 要渲染几分钟，
+    同步请求会撞上平台的反向代理超时（表现为 502 / 一直转圈）。
+    改成"提交任务 + 轮询"，每个请求都是毫秒级，永远不会超时。
     """
     text = payload.markdown or ""
     if len(text.strip()) < 20:
@@ -208,30 +213,53 @@ async def export_report_inline(payload: ExportRequest):
     if fmt not in ("pdf", "docx"):
         raise HTTPException(status_code=400, detail="format 只支持 pdf 或 docx")
 
-    # 唯一临时名，避免并发导出互相覆盖
     import uuid
 
-    stem = f"export_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    job_id = uuid.uuid4().hex[:16]
+    _EXPORT_JOBS[job_id] = {"status": "running", "path": "", "error": ""}
 
-    if fmt == "pdf":
-        path = await write_md_to_pdf(text, stem)
-    else:
-        path = await write_md_to_word(text, stem)
+    async def _run() -> None:
+        try:
+            path = await (write_md_to_pdf(text, job_id) if fmt == "pdf"
+                          else write_md_to_word(text, job_id))
+            if path:
+                _EXPORT_JOBS[job_id].update(status="done", path=path)
+            else:
+                _EXPORT_JOBS[job_id].update(status="failed", error=f"{fmt.upper()} 生成失败")
+        except Exception as exc:  # noqa: BLE001 - 任务失败只记录，不抛出
+            _EXPORT_JOBS[job_id].update(status="failed", error=str(exc))
 
-    if not path:
-        raise HTTPException(status_code=500, detail=f"{fmt.upper()} 生成失败（详见服务端日志）")
+    asyncio.create_task(_run())
+    return {"job_id": job_id, "status": "running"}
 
-    target = Path("outputs") / Path(path).name
+
+@app.get("/api/export/job/{job_id}")
+async def export_job_status(job_id: str):
+    """查询导出任务状态：running / done / failed。"""
+    job = _EXPORT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    return {"status": job["status"], "error": job.get("error", "")}
+
+
+@app.get("/api/export/file/{job_id}")
+async def export_job_file(job_id: str):
+    """任务完成后取文件。PDF 内联预览，DOCX 作为附件下载。"""
+    job = _EXPORT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    if job["status"] != "done":
+        raise HTTPException(status_code=409, detail=f"任务未完成（当前 {job['status']}）")
+
+    target = Path("outputs") / Path(job["path"]).name
     if not target.exists():
-        raise HTTPException(status_code=500, detail="生成的文件未落盘")
+        raise HTTPException(status_code=404, detail="生成的文件已丢失，请重新导出")
 
-    if fmt == "pdf":
-        # 不设 filename：浏览器内联预览，右上角仍可另存
+    if target.suffix == ".pdf":
         return FileResponse(target, media_type="application/pdf")
-    safe_title = re.sub(r"[^\w\-]", "", payload.title or "report") or "report"
     return FileResponse(
         target,
-        filename=f"{safe_title}.docx",
+        filename="report.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
