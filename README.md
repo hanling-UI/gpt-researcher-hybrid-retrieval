@@ -1,3 +1,7 @@
+> **This is a fork of [gpt-researcher](https://github.com/assafelovic/gpt-researcher).**
+> The retrieval pipeline (hybrid search, RRF fusion, reranking, offline evaluation)
+> is reworked by me. See [EVAL.md](EVAL.md) for evaluation results.
+
 <div align="center" id="top">
 
 <img src="https://github.com/assafelovic/gpt-researcher/assets/13554167/20af8286-b386-44a5-9a83-3be1365139c3" alt="Logo" width="80">
