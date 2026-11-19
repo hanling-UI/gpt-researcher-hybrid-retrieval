@@ -35,8 +35,8 @@ const GPTResearcher = (() => {
   let lastReportMarkdown = '';
 
   // 通过 POST 把正文交给服务端即时转换（无状态导出）
-  const exportReport = async (format) => {
-    const markdown = lastReportMarkdown || reportContent || '';
+  const exportReport = async (format, markdownOverride) => {
+    const markdown = markdownOverride || lastReportMarkdown || reportContent || '';
     if (!markdown || markdown.trim().length < 20) {
       showToast('报告正文还没准备好，请等报告生成完再试');
       return;
@@ -93,6 +93,31 @@ const GPTResearcher = (() => {
       if (previewWindow) previewWindow.close();
       showToast('导出请求失败，请检查网络后重试');
     }
+  };
+
+  // 历史面板里的 PDF/Word：用事件委托处理，正文从 localStorage 取
+  const bindHistoryExport = () => {
+    const panel = document.getElementById('historyPanel');
+    if (!panel || panel.dataset.exportBound === '1') return;
+    panel.dataset.exportBound = '1';
+    panel.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-format][data-md-key]');
+      if (!target) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const format = target.dataset.format;
+      const mdKey = target.dataset.mdKey;
+      let markdown = '';
+      if (mdKey) {
+        try { markdown = localStorage.getItem(mdKey) || ''; } catch (e) { /* 忽略 */ }
+      }
+      if (!markdown) {
+        showToast('这条记录的正文已不在本地，请重新研究后再导出');
+        return;
+      }
+      exportReport(format, markdown);
+    });
   };
 
   // 把 PDF / Word 按钮接管掉（顶栏 2 个 + 底栏 2 个）
@@ -157,6 +182,7 @@ const GPTResearcher = (() => {
 
     // 接管 PDF / Word 下载按钮（改为无状态 POST 导出）
     bindExportButtons();
+    bindHistoryExport();
 
     // The download bar is now fixed in place with CSS
     // No need to set display property here
@@ -677,8 +703,8 @@ const GPTResearcher = (() => {
           ${timestampHTML}
         </div>
         <div class="history-entry-format">
-          ${links.pdf ? `<a href="${links.pdf}" class="history-entry-action" target="_blank" title="打开 PDF 报告"><i class="fas fa-file-pdf"></i> PDF</a>` : ''}
-          ${links.docx ? `<a href="${links.docx}" class="history-entry-action" target="_blank" title="打开 Word 文档"><i class="fas fa-file-word"></i> Word</a>` : ''}
+          ${links.pdf ? `<a href="#" data-md-key="${entry.mdKey || ''}" data-format="pdf" class="history-entry-action" title="生成并预览 PDF"><i class="fas fa-file-pdf"></i> PDF</a>` : ''}
+          ${links.docx ? `<a href="#" data-md-key="${entry.mdKey || ''}" data-format="docx" class="history-entry-action" title="生成并下载 Word"><i class="fas fa-file-word"></i> Word</a>` : ''}
           ${links.md ? `<a href="${links.md}" class="history-entry-action" target="_blank" title="打开 Markdown 文件"><i class="fas fa-file-lines"></i> MD</a>` : ''}
           ${links.json ? `<a href="${links.json}" class="history-entry-action" target="_blank" title="打开 JSON 数据"><i class="fas fa-file-code"></i> JSON</a>` : ''}
         </div>
@@ -855,9 +881,21 @@ const GPTResearcher = (() => {
     console.debug('Saving history with links:', links);
 
     // Create history entry with timestamp
+    // 报告正文单独存 localStorage：cookie 只有 4KB，存不下十几 KB 的正文。
+    // 这样历史里的 PDF/Word 也能按需重新生成，而不是指向早已失效的服务端文件。
+    let mdKey = '';
+    try {
+      mdKey = 'gptr_md_' + Date.now();
+      localStorage.setItem(mdKey, report);
+    } catch (e) {
+      console.warn('保存报告正文失败（可能存储已满）:', e);
+      mdKey = '';
+    }
+
     const historyEntry = {
       prompt,
       links,
+      mdKey,
       timestamp: new Date().toISOString()
     };
 
