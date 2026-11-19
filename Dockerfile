@@ -11,13 +11,14 @@ WORKDIR /app
 
 # 只装运行期必需的系统包。numpy / pymupdf / pandas 都有预编译 wheel，
 # 不需要 build-essential 去现场编译。
-# 后面这几组是 WeasyPrint 渲染 PDF 的依赖，缺了会报
-# "cannot load library 'libgobject-2.0-0'"。
+# pango/gdk-pixbuf/cairo/glib 是 WeasyPrint 渲染 PDF 的依赖；
+# fonts-noto-cjk 是**中文字体**——没有它，PDF 里的汉字会渲染成方块。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl \
         libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
         libgdk-pixbuf-2.0-0 libffi-dev libcairo2 shared-mime-info \
+        fonts-noto-cjk fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
 # 依赖单独一层：只要 requirements.txt 没变，改代码时不会重装依赖

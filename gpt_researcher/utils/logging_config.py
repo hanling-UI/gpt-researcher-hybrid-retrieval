@@ -32,8 +32,11 @@ class JSONResearchHandler:
         self._save_json()
 
     def _save_json(self):
-        with open(self.json_file, 'w') as f:
-            json.dump(self.research_data, f, indent=2)
+        # encoding 显式指定 utf-8：否则在 Windows 上会用系统默认编码写盘。
+        # ensure_ascii=False：否则中文会被转义成 \u4e00 这种，人能看不能读。
+        # 生成的仍然是标准 JSON，只是保留原始字符。
+        with open(self.json_file, 'w', encoding='utf-8') as f:
+            json.dump(self.research_data, f, indent=2, ensure_ascii=False)
 
 def setup_research_logging():
     # Create logs directory if it doesn't exist
