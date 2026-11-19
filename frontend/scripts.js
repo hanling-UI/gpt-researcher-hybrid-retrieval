@@ -729,6 +729,26 @@ const GPTResearcher = (() => {
   }
 
   // Save current research to history (minimal: prompt and links only)
+  // 第二次 path 消息到达时，把新补齐的下载链接合并进最近一条历史记录
+  const updateLatestHistoryLinks = (links) => {
+    if (!conversationHistory || conversationHistory.length === 0) return;
+    const latest = conversationHistory[0];
+    if (!latest || !latest.links) return;
+
+    let changed = false;
+    ['pdf', 'docx', 'md', 'json'].forEach((key) => {
+      if (links[key] && latest.links[key] !== links[key]) {
+        latest.links[key] = links[key];
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      saveConversationHistory();
+      renderHistoryEntries();
+    }
+  }
+
   const saveToHistory = (report, downloadLinks) => {
     if (!downloadLinks) {
       console.error('No download links provided');
@@ -944,6 +964,10 @@ const GPTResearcher = (() => {
         if (reportContent && downloadLinkData && !historySaved) {
           historySaved = true;
           saveToHistory(reportContent, downloadLinkData);
+        } else if (historySaved && data.output) {
+          // 第二次 path（补齐 pdf/docx）到了：更新刚才那条历史记录，
+          // 否则历史里的条目会缺 PDF/Word 链接。
+          updateLatestHistoryLinks(data.output);
 
           // Reset variables for next research session
           reportContent = '';
@@ -1206,6 +1230,17 @@ const GPTResearcher = (() => {
     updateLink('downloadLinkWordTop', docx);
     updateLink('downloadLinkMdTop', md);
     updateLink('downloadLinkJsonTop', json);
+
+    // 某一格式明确生成失败（空字符串）时，把对应按钮藏起来，
+    // 而不是留一个永远灰着、点了没反应的按钮。
+    const hideBtn = (id) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    };
+    if (pdf === '') { hideBtn('downloadLink'); hideBtn('downloadLinkTop'); }
+    if (docx === '') { hideBtn('downloadLinkWord'); hideBtn('downloadLinkWordTop'); }
+    if (md === '') { hideBtn('downloadLinkMd'); hideBtn('downloadLinkMdTop'); }
+    if (json === '') { hideBtn('downloadLinkJson'); hideBtn('downloadLinkJsonTop'); }
 
     // Make sure download buttons are visible when download links are ready
     showDownloadPanels();
@@ -1473,10 +1508,15 @@ const GPTResearcher = (() => {
       stickyDownloadsBar.classList.add('visible');
     }
 
-    // Enable all download buttons
+    // 只显示下载条，**不要**无条件解锁按钮。
+    // 原来这里把所有按钮的 disabled 类都去掉了：此时路径还没到、href 还是 "#"，
+    // 用户一点就变成"把当前页面下载成 .htm"。只解锁真正拿到链接的按钮。
     const downloadButtons = document.querySelectorAll('.download-option-btn, .report-action-btn');
     downloadButtons.forEach(button => {
-      button.classList.remove('disabled');
+      const href = button.getAttribute('href');
+      if (href && href !== '#') {
+        button.classList.remove('disabled');
+      }
     });
 
     // Make top buttons report-actions section visible
