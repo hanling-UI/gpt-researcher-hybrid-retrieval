@@ -62,6 +62,18 @@ class ResearchRequest(BaseModel):
     generate_in_background: bool = True
 
 
+class ExportRequest(BaseModel):
+    """按需导出：正文由前端传上来，服务端不依赖任何持久化文件。
+
+    为什么这样设计：Render 这类无状态容器每次重新部署/休眠唤醒都会清空
+    outputs/ 目录。如果导出依赖服务端文件，用户过一会儿再点下载就是 404。
+    把正文放在请求体里，服务端只做"转换并返回流"，重启多少次都不影响。
+    """
+    markdown: str
+    format: str = "pdf"
+    title: str = "report"
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="allow")  # Allow extra fields in the request
     
@@ -181,6 +193,49 @@ async def read_report(request: Request, research_id: str):
 
 
 # Simplified API routes - no database persistence
+@app.post("/api/export")
+async def export_report_inline(payload: ExportRequest):
+    """把前端传来的 Markdown 即时转换成 PDF / DOCX 并返回文件流。
+
+    这是无状态导出：不读 outputs/、不依赖之前生成过什么文件，
+    所以容器重启、休眠唤醒都不会 404。
+    """
+    text = payload.markdown or ""
+    if len(text.strip()) < 20:
+        raise HTTPException(status_code=400, detail="报告正文为空，无法导出")
+
+    fmt = (payload.format or "").strip().lower()
+    if fmt not in ("pdf", "docx"):
+        raise HTTPException(status_code=400, detail="format 只支持 pdf 或 docx")
+
+    # 唯一临时名，避免并发导出互相覆盖
+    import uuid
+
+    stem = f"export_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+
+    if fmt == "pdf":
+        path = await write_md_to_pdf(text, stem)
+    else:
+        path = await write_md_to_word(text, stem)
+
+    if not path:
+        raise HTTPException(status_code=500, detail=f"{fmt.upper()} 生成失败（详见服务端日志）")
+
+    target = Path("outputs") / Path(path).name
+    if not target.exists():
+        raise HTTPException(status_code=500, detail="生成的文件未落盘")
+
+    if fmt == "pdf":
+        # 不设 filename：浏览器内联预览，右上角仍可另存
+        return FileResponse(target, media_type="application/pdf")
+    safe_title = re.sub(r"[^\w\-]", "", payload.title or "report") or "report"
+    return FileResponse(
+        target,
+        filename=f"{safe_title}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
 @app.get("/api/export/{stem}")
 async def export_report(stem: str, format: str = "pdf"):
     """按需把 outputs/<stem>.md 转换成 pdf/docx 并返回。

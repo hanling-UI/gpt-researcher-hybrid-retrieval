@@ -30,6 +30,89 @@ const GPTResearcher = (() => {
   let pendingChatPayload = null;
   // 下载链接分两次到达（先 md/json，再 pdf/docx），历史只保存一次
   let historySaved = false;
+  // 最近一次报告的 Markdown 正文。PDF/Word 导出把它随请求发给服务端，
+  // 不再依赖 outputs/ 里的文件（容器重启就没了）。
+  let lastReportMarkdown = '';
+
+  // 通过 POST 把正文交给服务端即时转换（无状态导出）
+  const exportReport = async (format) => {
+    const markdown = lastReportMarkdown || reportContent || '';
+    if (!markdown || markdown.trim().length < 20) {
+      showToast('报告正文还没准备好，请等报告生成完再试');
+      return;
+    }
+
+    const label = format === 'pdf' ? 'PDF' : 'Word';
+    // PDF 需要新标签页预览：必须在点击的同步阶段先把窗口打开，
+    // 否则 fetch 之后再 window.open 会被浏览器的弹窗拦截器挡掉。
+    const previewWindow = format === 'pdf' ? window.open('', '_blank') : null;
+
+    showToast(`正在生成 ${label}，首次可能需要 1~3 分钟…`, 8000);
+
+    try {
+      const response = await fetch('/api/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          markdown: markdown,
+          format: format,
+          title: (document.getElementById('task') || {}).value || 'report',
+        }),
+      });
+
+      if (!response.ok) {
+        let detail = response.status;
+        try {
+          const data = await response.json();
+          detail = data.detail || detail;
+        } catch (e) { /* 非 JSON 响应，保留状态码 */ }
+        if (previewWindow) previewWindow.close();
+        showToast(`生成失败：${detail}`);
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      if (format === 'pdf') {
+        if (previewWindow) previewWindow.location = url;
+        else window.open(url, '_blank');
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'report.docx';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      // 给浏览器留足时间读取 blob，再释放
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
+    } catch (error) {
+      console.error('导出失败:', error);
+      if (previewWindow) previewWindow.close();
+      showToast('导出请求失败，请检查网络后重试');
+    }
+  };
+
+  // 把 PDF / Word 按钮接管掉（顶栏 2 个 + 底栏 2 个）
+  const bindExportButtons = () => {
+    const bindings = [
+      ['downloadLink', 'pdf'],
+      ['downloadLinkTop', 'pdf'],
+      ['downloadLinkWord', 'docx'],
+      ['downloadLinkWordTop', 'docx'],
+    ];
+    bindings.forEach(([id, format]) => {
+      const el = document.getElementById(id);
+      if (!el || el.dataset.exportBound === '1') return;
+      el.dataset.exportBound = '1';
+      el.addEventListener('click', (event) => {
+        event.preventDefault();
+        exportReport(format);
+      });
+    });
+  };
 
   const init = () => {
     // Check if cookies are enabled
@@ -71,6 +154,9 @@ const GPTResearcher = (() => {
 
     // Initialize MCP functionality
     initMCPSection();
+
+    // 接管 PDF / Word 下载按钮（改为无状态 POST 导出）
+    bindExportButtons();
 
     // The download bar is now fixed in place with CSS
     // No need to set display property here
@@ -968,6 +1054,9 @@ const GPTResearcher = (() => {
           // 第二次 path（补齐 pdf/docx）到了：更新刚才那条历史记录，
           // 否则历史里的条目会缺 PDF/Word 链接。
           updateLatestHistoryLinks(data.output);
+
+          // 正文留一份给导出用，再清空本轮累积变量
+          lastReportMarkdown = reportContent;
 
           // Reset variables for next research session
           reportContent = '';
