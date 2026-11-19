@@ -22,6 +22,13 @@ const GPTResearcher = (() => {
   let maxReconnectAttempts = 5;
   let reconnectInterval = 2000; // Start with 2 seconds
 
+  // 心跳定时器：后端支持收到 "ping" 回 "pong"（见 server_utils.py），
+  // 但前端从来不发，导致空闲几分钟后连接被 Render / 反向代理掐断。
+  let heartbeatTimer = null;
+  // 重连期间暂存"待补发"的聊天消息。只在 onopen 里发一次，
+  // 避免多个重连定时器同时 send 造成重复提问、重复回答。
+  let pendingChatPayload = null;
+
   const init = () => {
     // Check if cookies are enabled
     checkCookiesEnabled();
@@ -860,7 +867,19 @@ const GPTResearcher = (() => {
       // Reset reconnect attempts on successful message
       reconnectAttempts = 0;
 
-      const data = JSON.parse(event.data)
+      // 心跳回包 "pong" 是纯文本，不是 JSON。
+      // 原来直接 JSON.parse 会抛异常，整个 onmessage 中断。
+      if (event.data === 'pong') {
+        return;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (e) {
+        console.warn('收到非 JSON 消息，已忽略:', event.data);
+        return;
+      }
       console.log("Received message:", data);  // Debug log
 
       // Update WebSocket metrics
@@ -941,6 +960,26 @@ const GPTResearcher = (() => {
       // Clear the connection timeout
       clearTimeout(connectionTimeout);
 
+      // 启动心跳：每 25 秒一次，防止空闲时被中间层判定超时。
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send('ping');
+        }
+      }, 25000);
+
+      // 重连成功后补发一次等待中的聊天消息（只发一次）
+      if (pendingChatPayload) {
+        const payload = pendingChatPayload;
+        pendingChatPayload = null;
+        try {
+          socket.send(payload);
+          console.log('连接恢复，已补发等待中的消息');
+        } catch (e) {
+          console.error('补发消息失败:', e);
+        }
+      }
+
       // Update WebSocket metrics
       connectionStartTime = Date.now();
       lastActivityTime = Date.now();
@@ -1006,6 +1045,10 @@ const GPTResearcher = (() => {
     }
 
     socket.onclose = (event) => {
+      // 连接关了就别再发心跳了，否则 setInterval 会一直空转
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+
       // Update metrics and status when connection closes
       connectionStartTime = null;
       updateWebSocketStatus();
@@ -1866,38 +1909,30 @@ const GPTResearcher = (() => {
 
     reconnectAttempts++;
 
+    // 把待发的消息暂存起来，由 onopen 统一补发一次。
+    //
+    // 原来这里是"每次重连各起一个 setInterval 轮询，socket 一开就 send"。
+    // 问题是重连可能被触发多次（onclose + 用户点发送），于是有 N 个轮询
+    // 同时等待；socket 一恢复，N 个定时器各发一遍同一条提问，
+    // 用户看到的就是"同一个问题出现 5 次、同一个回答出现 5 次"。
+    if (message) {
+      pendingChatPayload = message;
+    }
+
     // Calculate backoff time (exponential backoff)
     const backoff = reconnectInterval * Math.pow(1.5, reconnectAttempts - 1);
     console.log(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts}) in ${backoff}ms...`);
 
-    // Show reconnection status to user
-    addChatMessage(`连接已断开，正在重连（${reconnectAttempts}/${maxReconnectAttempts}）……`, false);
+    // 只在第一次重连时提示用户，避免聊天区被 5 条通知刷屏
+    if (reconnectAttempts === 1) {
+      addChatMessage('连接已断开，正在重连……', false);
+    }
 
     // Try to reconnect after delay
     setTimeout(() => {
       try {
         // Setup new WebSocket connection
         dispose_socket = listenToSockEvents();
-
-        // Set up a one-time handler to send the message after reconnection
-        if (message) {
-          const messageToSend = message;
-          const checkConnectionAndSend = () => {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-              console.log("Reconnected successfully, sending queued message");
-              socket.send(messageToSend);
-              return true;
-            } else if (reconnectAttempts < maxReconnectAttempts) {
-              console.log("Socket not ready yet, retrying...");
-              setTimeout(checkConnectionAndSend, 1000);
-              return false;
-            }
-            return false;
-          };
-
-          setTimeout(checkConnectionAndSend, 1000);
-        }
-
         return true;
       } catch (e) {
         console.error("Error during reconnection:", e);
