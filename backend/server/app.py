@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Dict, List, Any
 import time
 import logging
@@ -180,6 +181,47 @@ async def read_report(request: Request, research_id: str):
 
 
 # Simplified API routes - no database persistence
+@app.get("/api/export/{stem}")
+async def export_report(stem: str, format: str = "pdf"):
+    """按需把 outputs/<stem>.md 转换成 pdf/docx 并返回。
+
+    为什么按需：免费实例只有 0.1 CPU，WeasyPrint 渲染中文长报告要几分钟。
+    如果在研究结束时就同步生成，用户要干等几分钟才能看到下载按钮。
+    改成点击时才生成：
+      * 按钮在报告结束的瞬间就可用；
+      * 不点就不花 CPU；
+      * 同一份报告第二次点击直接命中已生成的文件。
+    """
+    safe_stem = re.sub(r"[^\w\-]", "", stem)
+    if not safe_stem:
+        raise HTTPException(status_code=400, detail="非法的报告标识")
+
+    outputs = Path("outputs")
+    md_path = outputs / f"{safe_stem}.md"
+    if not md_path.exists():
+        raise HTTPException(status_code=404, detail="报告正文不存在，请重新研究")
+
+    if format not in ("pdf", "docx"):
+        raise HTTPException(status_code=400, detail="format 只支持 pdf 或 docx")
+
+    target = outputs / f"{safe_stem}.{format}"
+    if not target.exists():
+        text = md_path.read_text(encoding="utf-8")
+        if format == "pdf":
+            await write_md_to_pdf(text, safe_stem)
+        else:
+            await write_md_to_word(text, safe_stem)
+
+    if not target.exists():
+        raise HTTPException(status_code=500, detail=f"{format.upper()} 生成失败（详见服务端日志）")
+
+    # PDF 不设 filename：浏览器内联预览，右上角仍可下载。
+    # DOCX 浏览器无法预览，设 filename 直接下载。
+    if format == "pdf":
+        return FileResponse(target, media_type="application/pdf")
+    return FileResponse(target, filename=target.name)
+
+
 @app.get("/api/reports")
 async def get_all_reports(report_ids: str = None):
     report_ids_list = report_ids.split(",") if report_ids else None

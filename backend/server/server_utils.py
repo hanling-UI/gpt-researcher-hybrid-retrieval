@@ -191,18 +191,18 @@ async def handle_start_command(websocket, data: str, manager):
     except Exception as exc:  # 连接已断也不能影响后续文件生成
         logger.warning("发送 report_finished 失败：%s", exc)
 
-    # 先推"毫秒级"就能拿到的两种：Markdown 和 JSON 日志。
-    # 这样下载条会在报告结束的瞬间就可用，用户不用干等 PDF。
-    quick_paths = {
-        "md": _to_web_path(await write_text_to_md(report, sanitized_filename)),
+    # Markdown 写盘是毫秒级的；PDF / Word 改成"点击时才生成"的按需接口。
+    #
+    # 为什么不在这里直接生成：免费实例只有 0.1 CPU，WeasyPrint 渲染中文长报告
+    # 要几分钟。同步生成会让下载按钮几分钟后才出现（用户干等），
+    # 而且不点下载的人白花了这份 CPU。
+    stem = sanitized_filename
+    file_paths = {
+        "md": _to_web_path(await write_text_to_md(report, stem)),
         "json": _to_web_path(os.path.relpath(logs_handler.log_file).replace("\\", "/")),
+        "pdf": f"/api/export/{stem}?format=pdf",
+        "docx": f"/api/export/{stem}?format=docx",
     }
-    await send_file_paths(websocket, quick_paths)
-
-    # PDF / Word 慢（免费实例上可能几分钟），好了再补推一次，前端补齐这两个链接。
-    file_paths = await generate_report_files(report, sanitized_filename)
-    file_paths["json"] = quick_paths["json"]
-    file_paths["md"] = file_paths.get("md") or quick_paths["md"]
     await send_file_paths(websocket, file_paths)
 
 
