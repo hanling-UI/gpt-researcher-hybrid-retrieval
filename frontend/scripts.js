@@ -28,6 +28,8 @@ const GPTResearcher = (() => {
   // 重连期间暂存"待补发"的聊天消息。只在 onopen 里发一次，
   // 避免多个重连定时器同时 send 造成重复提问、重复回答。
   let pendingChatPayload = null;
+  // 下载链接分两次到达（先 md/json，再 pdf/docx），历史只保存一次
+  let historySaved = false;
 
   const init = () => {
     // Check if cookies are enabled
@@ -809,6 +811,7 @@ const GPTResearcher = (() => {
     imageContainer.innerHTML = ''
     imageContainer.style.display = 'none'
 
+    historySaved = false;
     updateState('in_progress')
 
     addAgentResponse({
@@ -914,9 +917,17 @@ const GPTResearcher = (() => {
           // For all other report types, append HTML of current chunk to the container.
           writeReport({ output: data.output, type: 'report' }, converter, false, true); // append = true
         }
+      } else if (data.type === 'report_finished') {
+        // 后端报告正文一结束就推这条，不等 PDF/Word 生成完。
+        // 否则在免费实例上（0.1 CPU）PDF 要渲染几分钟，页面会一直卡在
+        // "研究进行中"：转圈、聊天框不显示、下载条不出来。
+        updateState('finished');
+        showDownloadPanels();
       } else if (data.type === 'path') {
         updateState('finished')
-        downloadLinkData = updateDownloadLink(data)
+        // 两次 path 消息：第一次只有 md/json，第二次补齐 pdf/docx。
+        // 用 Object.assign 合并，避免后到的消息把先到的链接覆盖成 undefined。
+        downloadLinkData = Object.assign({}, downloadLinkData || {}, updateDownloadLink(data))
         isResearchActive = false;
 
         // Get the current report_type
@@ -929,7 +940,9 @@ const GPTResearcher = (() => {
         }
 
         // Save to history now that research is complete
-        if (reportContent && downloadLinkData) {
+        // 两次 path 消息只保存一次历史（否则同一条研究会进两条历史记录）
+        if (reportContent && downloadLinkData && !historySaved) {
+          historySaved = true;
           saveToHistory(reportContent, downloadLinkData);
 
           // Reset variables for next research session

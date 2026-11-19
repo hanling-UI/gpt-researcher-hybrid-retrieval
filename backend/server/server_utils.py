@@ -111,7 +111,7 @@ class Researcher:
         file_paths = await generate_report_files(report, sanitized_filename)
         
         # Get the JSON log path that was created by CustomLogsHandler
-        json_relative_path = os.path.relpath(self.logs_handler.log_file)
+        json_relative_path = _to_web_path(os.path.relpath(self.logs_handler.log_file).replace("\\", "/"))
         
         return {
             "output": {
@@ -180,9 +180,29 @@ async def handle_start_command(websocket, data: str, manager):
         max_search_results,
     )
     report = str(report)
+
+    # 报告正文已经流式发完了，立刻通知前端"研究阶段结束"，**不要等文件生成**。
+    # 免费实例只有 0.1 CPU，WeasyPrint 渲染一份中文长报告要几分钟；
+    # 等它会让页面一直停在"研究进行中"：转圈不停、聊天框不显示、下载条不出来。
+    # 前端收到这条会调用 updateState('finished')，聊天和下载条立刻可用，
+    # 具体文件链接等后面那条 path 消息到了再填。
+    try:
+        await websocket.send_json({"type": "report_finished"})
+    except Exception as exc:  # 连接已断也不能影响后续文件生成
+        logger.warning("发送 report_finished 失败：%s", exc)
+
+    # 先推"毫秒级"就能拿到的两种：Markdown 和 JSON 日志。
+    # 这样下载条会在报告结束的瞬间就可用，用户不用干等 PDF。
+    quick_paths = {
+        "md": _to_web_path(await write_text_to_md(report, sanitized_filename)),
+        "json": _to_web_path(os.path.relpath(logs_handler.log_file).replace("\\", "/")),
+    }
+    await send_file_paths(websocket, quick_paths)
+
+    # PDF / Word 慢（免费实例上可能几分钟），好了再补推一次，前端补齐这两个链接。
     file_paths = await generate_report_files(report, sanitized_filename)
-    # Add JSON log path to file_paths
-    file_paths["json"] = os.path.relpath(logs_handler.log_file)
+    file_paths["json"] = quick_paths["json"]
+    file_paths["md"] = file_paths.get("md") or quick_paths["md"]
     await send_file_paths(websocket, file_paths)
 
 
@@ -292,9 +312,18 @@ async def generate_report_files(report: str, filename: str) -> Dict[str, str]:
         ("docx", write_md_to_word),
         ("md", write_text_to_md),
     )
+    # PDF 在免费实例（0.1 CPU）上渲染中文长报告可能要几分钟。
+    # 给一个上限：超时只当这一种格式失败，不能让整条链路无限等——
+    # 否则前端永远收不到含 pdf 的 path 消息，按钮一直是灰的。
+    timeouts = {"pdf": 240, "docx": 120, "md": 30}
     for key, generate in generators:
         try:
-            results[key] = _to_web_path(await generate(report, filename))
+            results[key] = _to_web_path(
+                await asyncio.wait_for(generate(report, filename), timeout=timeouts[key])
+            )
+        except asyncio.TimeoutError:
+            logger.warning("生成 %s 超时（>%ss），跳过", key, timeouts[key])
+            results[key] = ""
         except Exception as exc:  # noqa: BLE001 - 单格式失败不能拖垮整体
             logger.warning("生成 %s 失败，跳过：%s", key, exc)
             results[key] = ""
