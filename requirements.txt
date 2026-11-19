@@ -27,6 +27,9 @@ google-genai>=1.0.0  # For image generation with Imagen
 tavily-python>=0.7.12
 ddgs>=9.0.0
 arxiv>=2.0.0
+# 中文混合检索（二次开发新增）
+rank_bm25>=0.2.2
+jieba>=0.42.1
 
 # Document Processing
 beautifulsoup4>=4.12.2

@@ -1,64 +1,39 @@
-# Stage 1: Browser and build tools installation
-# Python 3.12+ required for LangChain v1
-FROM python:3.14-slim-bookworm AS install-browser
+# 精简版镜像：去掉浏览器（本方案用 bs 解析 HTML）与 weasyprint（PDF 导出用不到）
+# 原版 Dockerfile 见 git 历史：git show HEAD~1:Dockerfile
+FROM python:3.12-slim
 
-# Install Chromium, Chromedriver, Firefox, Geckodriver, and build tools in one layer
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# 只装运行期必需的系统包。numpy / pymupdf / pandas 都有预编译 wheel，
+# 不需要 build-essential 去现场编译。
 RUN apt-get update \
-    && apt-get install -y gnupg wget ca-certificates --no-install-recommends \
-    && ARCH=$(dpkg --print-architecture) \
-    && wget -qO - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=${ARCH}] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y chromium chromium-driver \
-    && chromium --version && chromedriver --version \
-    && apt-get install -y --no-install-recommends firefox-esr build-essential \
-    && GECKO_ARCH=$(case ${ARCH} in amd64) echo "linux64" ;; arm64) echo "linux-aarch64" ;; *) echo "linux64" ;; esac) \
-    && wget https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-${GECKO_ARCH}.tar.gz \
-    && tar -xvzf geckodriver-v0.36.0-${GECKO_ARCH}.tar.gz \
-    && chmod +x geckodriver \
-    && mv geckodriver /usr/local/bin/ \
-    && rm geckodriver-v0.36.0-${GECKO_ARCH}.tar.gz \
-    && rm -rf /var/lib/apt/lists/*  # Clean up apt lists to reduce image size
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Stage 2: Python dependencies installation
-FROM install-browser AS gpt-researcher-install
+# 依赖单独一层：只要 requirements.txt 没变，改代码时不会重装依赖
+COPY requirements.txt ./
+RUN pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple && pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-ENV PIP_ROOT_USER_ACTION=ignore
-WORKDIR /usr/src/app
+# 应用代码
+COPY . .
 
-# Copy and install Python dependencies in a single layer to optimize cache usage
-COPY ./requirements.txt ./requirements.txt
-COPY ./multi_agents/requirements.txt ./multi_agents/requirements.txt
+# 运行时目录 + 非 root 用户
+RUN useradd -m appuser \
+    && mkdir -p /app/outputs /app/logs /app/data \
+    && chown -R appuser:appuser /app
+USER appuser
 
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt --upgrade --prefer-binary && \
-    pip install --no-cache-dir -r multi_agents/requirements.txt --upgrade --prefer-binary
+ENV PORT=8000
+EXPOSE 8000
 
-# Stage 3: Final stage with non-root user and app
-FROM gpt-researcher-install AS gpt-researcher
+# 健康检查：平台靠它判断容器是否活着
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -fsS "http://127.0.0.1:${PORT}/api/reports" || exit 1
 
-# Basic server configuration
-ARG HOST=0.0.0.0
-ENV HOST=${HOST}
-ARG PORT=8000
-ENV PORT=${PORT}
-EXPOSE ${PORT}
-
-# Uvicorn parameters used in CMD
-ARG WORKERS=1
-ENV WORKERS=${WORKERS}
-
-# Create a non-root user for security
-# NOTE: Don't use this if you are relying on `_check_pkg` to pip install packages dynamically.
-RUN useradd -ms /bin/bash gpt-researcher && \
-    chown -R gpt-researcher:gpt-researcher /usr/src/app && \
-    # Add these lines to create and set permissions for outputs directory
-    mkdir -p /usr/src/app/outputs && \
-    chown -R gpt-researcher:gpt-researcher /usr/src/app/outputs && \
-    chmod 777 /usr/src/app/outputs
-USER gpt-researcher
-WORKDIR /usr/src/app
-
-# Copy the rest of the application files with proper ownership
-COPY --chown=gpt-researcher:gpt-researcher ./ ./
-CMD uvicorn main:app --host ${HOST} --port ${PORT} --workers ${WORKERS}
+# 用 sh -c 是为了让 ${PORT} 能被展开（Render 之类的平台会注入自己的端口）
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]

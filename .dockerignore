@@ -1,2 +1,25 @@
+# 密钥绝对不能进镜像
+.env
+.env.*
+!.env.example
+
+# 版本控制与编辑器
 .git
+.idea
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 运行时产物
 output/
+outputs/
+logs/
+data/
+eval_runs/
+probes/
+
+# 体积大且单容器方案用不到
+frontend/nextjs/node_modules
+frontend/nextjs/.next
+tests/
+docs/
