@@ -92,7 +92,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "images_available",
-                f"🖼️ {len(available_images)} pre-generated images available for embedding",
+                f"🖼️ 有 {len(available_images)} 张预生成图片可插入",
                 self.researcher.websocket,
             )
         
@@ -100,7 +100,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "writing_report",
-                f"✍️ Writing report for '{self.researcher.query}'...",
+                f"✍️ 正在撰写报告：'{self.researcher.query}'……",
                 self.researcher.websocket,
             )
 
@@ -127,7 +127,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "report_written",
-                f"📝 Report written for '{self.researcher.query}'",
+                f"📝 报告已完成：'{self.researcher.query}'",
                 self.researcher.websocket,
             )
 
@@ -147,7 +147,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "writing_conclusion",
-                f"✍️ Writing conclusion for '{self.researcher.query}'...",
+                f"✍️ 正在撰写结论：'{self.researcher.query}'……",
                 self.researcher.websocket,
             )
 
@@ -166,7 +166,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "conclusion_written",
-                f"📝 Conclusion written for '{self.researcher.query}'",
+                f"📝 结论已完成：'{self.researcher.query}'",
                 self.researcher.websocket,
             )
 
@@ -178,7 +178,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "writing_introduction",
-                f"✍️ Writing introduction for '{self.researcher.query}'...",
+                f"✍️ 正在撰写引言：'{self.researcher.query}'……",
                 self.researcher.websocket,
             )
 
@@ -197,7 +197,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "introduction_written",
-                f"📝 Introduction written for '{self.researcher.query}'",
+                f"📝 引言已完成：'{self.researcher.query}'",
                 self.researcher.websocket,
             )
 
@@ -209,7 +209,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "generating_subtopics",
-                f"🌳 Generating subtopics for '{self.researcher.query}'...",
+                f"🌳 正在生成子主题：'{self.researcher.query}'……",
                 self.researcher.websocket,
             )
 
@@ -226,7 +226,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "subtopics_generated",
-                f"📊 Subtopics generated for '{self.researcher.query}'",
+                f"📊 子主题已生成：'{self.researcher.query}'",
                 self.researcher.websocket,
             )
 
@@ -238,7 +238,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "generating_draft_sections",
-                f"📑 Generating draft section titles for '{self.researcher.query}'...",
+                f"📑 正在生成章节标题：'{self.researcher.query}'……",
                 self.researcher.websocket,
             )
 
@@ -258,7 +258,7 @@ class ReportGenerator:
             await stream_output(
                 "logs",
                 "draft_sections_generated",
-                f"🗂️ Draft section titles generated for '{self.researcher.query}'",
+                f"🗂️ 章节标题已生成：'{self.researcher.query}'",
                 self.researcher.websocket,
             )
 

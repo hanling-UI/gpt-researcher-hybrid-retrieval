@@ -1,4 +1,4 @@
-# 精简版镜像：去掉浏览器（本方案用 bs 解析 HTML）与 weasyprint（PDF 导出用不到）
+# 精简版镜像：去掉浏览器（本方案用 bs 解析 HTML），保留 PDF 所需的 pango 系统库
 # 原版 Dockerfile 见 git 历史：git show HEAD~1:Dockerfile
 FROM python:3.12-slim
 
@@ -11,8 +11,13 @@ WORKDIR /app
 
 # 只装运行期必需的系统包。numpy / pymupdf / pandas 都有预编译 wheel，
 # 不需要 build-essential 去现场编译。
+# 后面这几组是 WeasyPrint 渲染 PDF 的依赖，缺了会报
+# "cannot load library 'libgobject-2.0-0'"。
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
+        libgdk-pixbuf-2.0-0 libffi-dev libcairo2 shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 # 依赖单独一层：只要 requirements.txt 没变，改代码时不会重装依赖

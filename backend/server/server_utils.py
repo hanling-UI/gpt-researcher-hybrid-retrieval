@@ -261,11 +261,44 @@ async def handle_chat_command(websocket, data: str):
             "role": "assistant"
         })
 
+def _to_web_path(path: str) -> str:
+    """把后端产出的文件路径转成前端能直接用的站点绝对 URL。
+
+    write_md_to_word 之类返回的是 "outputs/xxx.docx" 这种相对路径。
+    浏览器拿到相对路径后会**按当前页面地址**拼接：页面在 "/" 时拼成
+    "/outputs/xxx.docx"（正确），页面在 "/report/xxx" 时就会拼成
+    "/report/outputs/xxx.docx"（404）。前端任何一次路由变化都会让下载
+    按钮失效，属于隐性 bug。
+
+    统一加前导斜杠，让它永远相对站点根目录解析。
+    """
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://", "/")):
+        return path
+    return "/" + path
+
+
 async def generate_report_files(report: str, filename: str) -> Dict[str, str]:
-    pdf_path = await write_md_to_pdf(report, filename)
-    docx_path = await write_md_to_word(report, filename)
-    md_path = await write_text_to_md(report, filename)
-    return {"pdf": pdf_path, "docx": docx_path, "md": md_path}
+    """生成三种格式的报告文件，每种独立失败，互不影响。
+
+    PDF 依赖 WeasyPrint 的系统库（libpango 等），在精简镜像里缺失时会抛异常。
+    这里逐个 try/except：PDF 挂了不应该让 Word 和 Markdown 也拿不到，
+    返回空字符串的那一项，前端会隐藏对应按钮。
+    """
+    results: Dict[str, str] = {}
+    generators = (
+        ("pdf", write_md_to_pdf),
+        ("docx", write_md_to_word),
+        ("md", write_text_to_md),
+    )
+    for key, generate in generators:
+        try:
+            results[key] = _to_web_path(await generate(report, filename))
+        except Exception as exc:  # noqa: BLE001 - 单格式失败不能拖垮整体
+            logger.warning("生成 %s 失败，跳过：%s", key, exc)
+            results[key] = ""
+    return results
 
 
 async def send_file_paths(websocket, file_paths: Dict[str, str]):

@@ -49,7 +49,7 @@ class ContextManager:
             await stream_output(
                 "logs",
                 "fetching_query_content",
-                f"📚 Getting relevant content based on query: {query}...",
+                f"📚 正在按问题筛选相关内容：{query}……",
                 self.researcher.websocket,
             )
 
@@ -77,7 +77,7 @@ class ContextManager:
             await stream_output(
                 "logs",
                 "fetching_query_format",
-                f" Getting relevant content based on query: {query}...",
+                f" 正在按问题筛选相关内容：{query}……",
                 self.researcher.websocket,
                 )
         vectorstore_compressor = VectorstoreCompressor(
@@ -140,7 +140,7 @@ class ContextManager:
             await stream_output(
                 "logs",
                 "fetching_relevant_written_content",
-                f"🔎 Getting relevant written content based on query: {query}...",
+                f"🔎 正在筛选已写内容：{query}……",
                 self.researcher.websocket,
             )
 

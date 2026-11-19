@@ -51,7 +51,7 @@ class ResearchConductor:
         await stream_output(
             "logs",
             "planning_research",
-            f"🌐 Browsing the web to learn more about the task: {query}...",
+            f"🌐 正在浏览网页，深入了解任务：{query}……",
             self.researcher.websocket,
         )
 
@@ -73,7 +73,7 @@ class ResearchConductor:
         await stream_output(
             "logs",
             "planning_research",
-            f"🤔 Planning the research strategy and subtasks...",
+            f"🤔 正在规划研究策略与子任务……",
             self.researcher.websocket,
         )
 
@@ -115,7 +115,7 @@ class ResearchConductor:
             await stream_output(
                 "logs",
                 "starting_research",
-                f"🔍 Starting the research task for '{self.researcher.query}'...",
+                f"🔍 开始研究：'{self.researcher.query}'……",
                 self.researcher.websocket,
             )
             await stream_output(
@@ -151,7 +151,7 @@ class ResearchConductor:
                 await stream_output(
                     "logs",
                     "answering_from_memory",
-                    f"🧐 I was unable to find relevant context in the provided sources...",
+                    f"🧐 在已有来源中没有找到相关内容……",
                     self.researcher.websocket,
                 )
             if self.researcher.complement_source_urls:
@@ -232,7 +232,7 @@ class ResearchConductor:
             await stream_output(
                 "logs",
                 "research_step_finalized",
-                f"Finalized research step.\n💸 Total Research Costs: ${self.researcher.get_costs()}",
+                f"研究阶段结束。\n💸 本次研究总成本：${self.researcher.get_costs()}",
                 self.researcher.websocket,
             )
             if self.json_handler:
@@ -280,7 +280,7 @@ class ResearchConductor:
             await stream_output(
                 "logs",
                 "subqueries",
-                f"🗂️  I will conduct my research based on the following queries: {sub_queries}...",
+                f"🗂️ 我将围绕以下问题展开研究：{sub_queries}……",
                 self.researcher.websocket,
                 True,
                 sub_queries,
@@ -325,7 +325,7 @@ class ResearchConductor:
                         await stream_output(
                             "logs",
                             "mcp_disabled",
-                            f"⚡ MCP research disabled by configuration",
+                            f"⚡ 配置已关闭 MCP 研究",
                             self.researcher.websocket,
                         )
                 elif mcp_strategy == "fast":
@@ -335,7 +335,7 @@ class ResearchConductor:
                         await stream_output(
                             "logs",
                             "mcp_optimization",
-                            f"🚀 MCP Fast: Running once for main query (performance mode)",
+                            f"🚀 MCP 快速模式：对主问题只执行一次（性能优先）",
                             self.researcher.websocket,
                         )
 
@@ -350,7 +350,7 @@ class ResearchConductor:
                         await stream_output(
                             "logs",
                             "mcp_comprehensive",
-                            f"🔍 MCP Deep: Will run for each sub-query (thorough mode)",
+                            f"🔍 MCP 深度模式：对每个子问题分别执行（求全）",
                             self.researcher.websocket,
                         )
                     # Don't cache - let each sub-query run MCP individually
@@ -374,7 +374,7 @@ class ResearchConductor:
             await stream_output(
                 "logs",
                 "subqueries",
-                f"🗂️ I will conduct my research based on the following queries: {sub_queries}...",
+                f"🗂️ 我将围绕以下问题展开研究：{sub_queries}……",
                 self.researcher.websocket,
                 True,
                 sub_queries,
@@ -474,7 +474,7 @@ class ResearchConductor:
                             await stream_output(
                                 "logs",
                                 "mcp_results_cached",
-                                f"✅ Cached {len(mcp_results)} MCP results from query {i}/{len(queries)}",
+                                f"✅ 已缓存 {len(mcp_results)} 条 MCP 结果（{i}/{len(queries)}）",
                                 self.researcher.websocket,
                             )
                 except Exception as e:
@@ -483,7 +483,7 @@ class ResearchConductor:
                         await stream_output(
                             "logs",
                             "mcp_cache_error",
-                            f"⚠️ MCP research error for query {i}, continuing with other sources",
+                            f"⚠️ 第 {i} 个查询的 MCP 研究出错，继续使用其他来源",
                             self.researcher.websocket,
                         )
         
@@ -529,7 +529,7 @@ class ResearchConductor:
             await stream_output(
                 "logs",
                 "running_subquery_research",
-                f"\n🔍 Running research for '{sub_query}'...",
+                f"\n🔍 正在研究：'{sub_query}'……",
                 self.researcher.websocket,
             )
 
@@ -547,7 +547,7 @@ class ResearchConductor:
                     await stream_output(
                         "logs",
                         "mcp_tavily_deduped",
-                        "⚠️ Skipping Tavily MCP (redundant with direct Tavily retriever) to avoid double API cost",
+                        "⚠️ 跳过 Tavily MCP（与直连 Tavily 检索重复），避免重复计费",
                         self.researcher.websocket,
                     )
                 mcp_retrievers = []
@@ -572,7 +572,7 @@ class ResearchConductor:
                         await stream_output(
                             "logs",
                             "mcp_cache_reuse",
-                            f"♻️ Reusing cached MCP results ({len(mcp_context)} sources) for: {sub_query}",
+                            f"♻️ 复用缓存的 MCP 结果（{len(mcp_context)} 个来源）：{sub_query}",
                             self.researcher.websocket,
                         )
                     
@@ -584,7 +584,7 @@ class ResearchConductor:
                         await stream_output(
                             "logs",
                             "mcp_comprehensive_run",
-                            f"🔍 Running deep MCP research for: {sub_query}",
+                            f"🔍 正在对 {sub_query} 做深度 MCP 研究",
                             self.researcher.websocket,
                         )
                     
@@ -596,7 +596,7 @@ class ResearchConductor:
                         await stream_output(
                             "logs",
                             "mcp_fallback",
-                            f"🔌 MCP cache unavailable, running MCP research for: {sub_query}",
+                            f"🔌 MCP 缓存不可用，改为直接研究：{sub_query}",
                             self.researcher.websocket,
                         )
                     
@@ -628,7 +628,7 @@ class ResearchConductor:
                     await stream_output(
                         "logs",
                         "context_combined",
-                        f"📚 Combined research context: {mcp_count} MCP sources{cache_status}, {'web content' if web_available else 'no web content'}",
+                        f"📚 已汇总上下文：{mcp_count} 个 MCP 来源{cache_status}，{'含网页内容' if web_available else '不含网页内容'}",
                         self.researcher.websocket,
                     )
             else:
@@ -637,7 +637,7 @@ class ResearchConductor:
                     await stream_output(
                         "logs",
                         "subquery_context_not_found",
-                        f"🤷 No content found for '{sub_query}'...",
+                        f"🤷 '{sub_query}' 没有找到内容……",
                         self.researcher.websocket,
                     )
             
@@ -657,7 +657,7 @@ class ResearchConductor:
                 await stream_output(
                     "logs",
                     "subquery_error",
-                    f"❌ Error processing '{sub_query}': {str(e)}",
+                    f"❌ 处理 '{sub_query}' 出错：{str(e)}",
                     self.researcher.websocket,
                 )
             return ""
@@ -692,7 +692,7 @@ class ResearchConductor:
                 await stream_output(
                     "logs",
                     "mcp_retrieval_stage1",
-                    f"🧠 Stage 1: Selecting optimal MCP tools for: {query}",
+                    f"🧠 第一步：为「{query}」挑选最合适的 MCP 工具",
                     self.researcher.websocket,
                 )
             
@@ -709,7 +709,7 @@ class ResearchConductor:
                     await stream_output(
                         "logs",
                         "mcp_research_complete",
-                        f"🎯 MCP research completed: {result_count} intelligent results obtained",
+                        f"🎯 MCP 研究完成，获得 {result_count} 条结果",
                         self.researcher.websocket,
                     )
                 
@@ -720,7 +720,7 @@ class ResearchConductor:
                     await stream_output(
                         "logs",
                         "mcp_no_results",
-                        f"ℹ️ No relevant information found via MCP for: {query}",
+                        f"ℹ️ MCP 未找到与「{query}」相关的信息",
                         self.researcher.websocket,
                     )
                 return []
@@ -731,7 +731,7 @@ class ResearchConductor:
                 await stream_output(
                     "logs",
                     "mcp_research_error",
-                    f"⚠️ MCP research error: {str(e)} - continuing with other sources",
+                    f"⚠️ MCP 研究出错：{str(e)}，继续使用其他来源",
                     self.researcher.websocket,
                 )
             return []
@@ -802,7 +802,7 @@ class ResearchConductor:
             await stream_output(
                 "logs",
                 "running_subquery_with_vectorstore_research",
-                f"\n🔍 Running research for '{sub_query}'...",
+                f"\n🔍 正在研究：'{sub_query}'……",
                 self.researcher.websocket,
             )
 
@@ -825,7 +825,7 @@ class ResearchConductor:
                     await stream_output(
                         "logs",
                         "added_source_url",
-                        f"✅ Added source url to research: {url}\n",
+                        f"✅ 已加入来源：{url}\n",
                         self.researcher.websocket,
                         True,
                         url,
@@ -957,7 +957,7 @@ class ResearchConductor:
             await stream_output(
                 "logs",
                 "researching",
-                f"🤔 Researching for relevant information across multiple sources...\n",
+                f"🤔 正在多个来源中查找相关信息……\n",
                 self.researcher.websocket,
             )
 
@@ -1003,7 +1003,7 @@ class ResearchConductor:
                 await stream_output(
                     "logs",
                     "mcp_retrieval",
-                    f"🔌 Consulting MCP server(s) for information on: {query}",
+                    f"🔌 正在咨询 MCP 服务器：{query}",
                     self.researcher.websocket,
                 )
             
@@ -1024,7 +1024,7 @@ class ResearchConductor:
                             await stream_output(
                                 "logs",
                                 "mcp_results",
-                                f"✓ Retrieved {result_count} results from MCP server",
+                                f"✓ 从 MCP 服务器取得 {result_count} 条结果",
                                 self.researcher.websocket,
                             )
                         
@@ -1043,7 +1043,7 @@ class ResearchConductor:
                         await stream_output(
                             "logs",
                             "mcp_no_results",
-                            f"ℹ️ No relevant information found from MCP server for: {query}",
+                            f"ℹ️ MCP 服务器未返回与「{query}」相关的信息",
                             self.researcher.websocket,
                         )
                 
@@ -1057,7 +1057,7 @@ class ResearchConductor:
                 await stream_output(
                     "logs",
                     "mcp_error",
-                    f"❌ Error retrieving information from MCP server: {str(e)}",
+                    f"❌ 从 MCP 服务器取信息出错：{str(e)}",
                     self.researcher.websocket,
                 )
             return []
@@ -1136,7 +1136,7 @@ class ResearchConductor:
             await stream_output(
                 "logs",
                 "research_progress",
-                f"📊 Research Progress: {progress}%",
+                f"📊 研究进度：{progress}%",
                 self.researcher.websocket,
                 True,
                 {

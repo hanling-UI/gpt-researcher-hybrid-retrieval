@@ -59,6 +59,9 @@ colorama>=0.4.6
 md2pdf>=1.0.1
 mistune>=3.0.2
 htmldocx>=0.0.6
+# PDF 引擎：md2pdf 底层依赖它。镜像里还必须装 libpango 等系统库，
+# 否则运行时报 "cannot load library 'libgobject-2.0-0'"。
+weasyprint>=62.0
 
 # MCP Support (optional)
 mcp>=1.9.1,<2.0.0

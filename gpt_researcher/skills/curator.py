@@ -56,7 +56,7 @@ class SourceCurator:
             await stream_output(
                 "logs",
                 "research_plan",
-                f"⚖️ Evaluating and curating sources by credibility and relevance...",
+                f"⚖️ 正在按可信度与相关性筛选来源……",
                 self.researcher.websocket,
             )
 
@@ -96,7 +96,7 @@ class SourceCurator:
                 await stream_output(
                     "logs",
                     "research_plan",
-                    f"🏅 Verified and ranked top {len(curated_sources)} most reliable sources",
+                    f"🏅 已验证并排序前 {len(curated_sources)} 个最可靠的来源",
                     self.researcher.websocket,
                 )
 
@@ -108,7 +108,7 @@ class SourceCurator:
                 await stream_output(
                     "logs",
                     "research_plan",
-                    f"🚫 Source verification failed: {str(e)}",
+                    f"🚫 来源验证失败：{str(e)}",
                     self.researcher.websocket,
                 )
             return source_data

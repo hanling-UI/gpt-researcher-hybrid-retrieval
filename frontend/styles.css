@@ -1292,7 +1292,7 @@ footer a:hover {
 }
 
 .history-panel-toggle::after {
-    content: 'History';
+    content: '历史';
     font-size: 12px;
     font-weight: 500;
 }

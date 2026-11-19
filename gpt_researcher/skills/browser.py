@@ -48,7 +48,7 @@ class BrowserManager:
             await stream_output(
                 "logs",
                 "scraping_urls",
-                f"🌐 Scraping content from {len(urls)} URLs...",
+                f"🌐 正在抓取 {len(urls)} 个网页……",
                 self.researcher.websocket,
             )
 
@@ -63,13 +63,13 @@ class BrowserManager:
             await stream_output(
                 "logs",
                 "scraping_content",
-                f"📄 Scraped {len(scraped_content)} pages of content",
+                f"📄 已抓取 {len(scraped_content)} 个页面",
                 self.researcher.websocket,
             )
             await stream_output(
                 "logs",
                 "scraping_images",
-                f"🖼️ Selected {len(new_images)} new images from {len(images)} total images",
+                f"🖼️ 从 {len(images)} 张图片中筛出 {len(new_images)} 张",
                 self.researcher.websocket,
                 True,
                 new_images,
@@ -77,7 +77,7 @@ class BrowserManager:
             await stream_output(
                 "logs",
                 "scraping_complete",
-                f"🌐 Scraping complete",
+                f"🌐 抓取完成",
                 self.researcher.websocket,
             )
 
