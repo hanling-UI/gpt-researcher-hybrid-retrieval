@@ -219,6 +219,252 @@ const GPTResearcher = (() => {
     });
   };
 
+  // ================================================================
+  // 会话侧边栏：新建对话 / 会话列表 / 点击切回 / 删除
+  // 对齐原版 Next.js 的 ResearchSidebar 交互。
+  // 会话存在浏览器 localStorage：容器重建、重新部署都不会丢。
+  // ================================================================
+  const SESSIONS_KEY = 'gptr_sessions_v1';
+  let chatSessions = [];
+  let currentSessionId = null;
+
+  const loadSessions = () => {
+    try {
+      const raw = localStorage.getItem(SESSIONS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      chatSessions = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.warn('读取会话列表失败:', e);
+      chatSessions = [];
+    }
+  };
+
+  const persistSessions = () => {
+    try {
+      localStorage.setItem(SESSIONS_KEY, JSON.stringify(chatSessions));
+    } catch (e) {
+      console.warn('保存会话失败（可能存储已满）:', e);
+      showToast('本地存储已满，较早的对话可能无法保存');
+    }
+  };
+
+  const makeSessionTitle = (text) => {
+    const clean = (text || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return '未命名研究';
+    return clean.length > 36 ? clean.slice(0, 36) + '…' : clean;
+  };
+
+  const renderSessionList = () => {
+    const list = document.getElementById('sessionList');
+    const empty = document.getElementById('sessionEmpty');
+    if (!list) return;
+
+    const searchEl = document.getElementById('sessionSearch');
+    const keyword = (searchEl ? searchEl.value : '').trim().toLowerCase();
+    const items = chatSessions.filter(
+      (s) => !keyword || (s.title || '').toLowerCase().includes(keyword)
+    );
+
+    list.innerHTML = '';
+    if (empty) empty.style.display = chatSessions.length ? 'none' : 'block';
+
+    items.forEach((session) => {
+      const el = document.createElement('div');
+      el.className = 'session-item' + (session.id === currentSessionId ? ' active' : '');
+      el.dataset.id = session.id;
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'session-item-title';
+      titleEl.textContent = session.title || '未命名研究';
+
+      const metaEl = document.createElement('div');
+      metaEl.className = 'session-item-meta';
+      const when = new Date(session.updatedAt || session.createdAt || Date.now());
+      metaEl.textContent = isNaN(when.getTime()) ? '' : when.toLocaleString();
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'session-item-delete';
+      delBtn.title = '删除这个对话';
+      delBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+
+      el.appendChild(titleEl);
+      el.appendChild(metaEl);
+      el.appendChild(delBtn);
+
+      el.addEventListener('click', (event) => {
+        if (event.target.closest('.session-item-delete')) return;
+        loadSession(session.id);
+      });
+      delBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        deleteSession(session.id);
+      });
+
+      list.appendChild(el);
+    });
+  };
+
+  // 研究完成时保存/更新当前会话（正文 + 下载链接 + 时间）
+  const saveCurrentSession = () => {
+    const markdown = lastReportMarkdown || reportContent || '';
+    if (!markdown.trim()) return;
+
+    const taskEl = document.getElementById('task');
+    const title = makeSessionTitle(taskEl ? taskEl.value : '');
+
+    let session = chatSessions.find((s) => s.id === currentSessionId);
+    if (!session) {
+      session = {
+        id: 's_' + Date.now(),
+        title,
+        report: '',
+        messages: [],
+        links: {},
+        createdAt: new Date().toISOString(),
+      };
+      chatSessions.unshift(session);
+      currentSessionId = session.id;
+    }
+
+    session.title = title || session.title;
+    session.report = markdown;
+    session.links = Object.assign({}, session.links || {}, downloadLinkData || {});
+    session.updatedAt = new Date().toISOString();
+
+    persistSessions();
+    renderSessionList();
+  };
+
+  // 追问的每条消息也记进当前会话，切回来能看到完整对话
+  const appendSessionMessage = (role, content) => {
+    if (!currentSessionId || !content) return;
+    const session = chatSessions.find((s) => s.id === currentSessionId);
+    if (!session) return;
+
+    if (!Array.isArray(session.messages)) session.messages = [];
+    session.messages.push({ role, content, time: new Date().toISOString() });
+    session.updatedAt = new Date().toISOString();
+
+    persistSessions();
+  };
+
+  const loadSession = (id) => {
+    const session = chatSessions.find((s) => s.id === id);
+    if (!session) return;
+
+    currentSessionId = id;
+    lastReportMarkdown = session.report || '';
+    downloadLinkData = session.links || {};
+
+    // 把问题填回输入框
+    const taskEl = document.getElementById('task');
+    if (taskEl && session.title) taskEl.value = session.title.replace(/…$/, '');
+
+    // 渲染报告正文
+    const converter = new showdown.Converter({
+      ghCodeBlocks: true,
+      tables: true,
+      tasklists: true,
+      openLinksInNewWindow: true,
+    });
+    writeReport({ output: session.report || '', type: 'report' }, converter, true, false);
+
+    // 显示报告、聊天、下载条
+    const reportContainerEl = document.getElementById('reportContainer');
+    if (reportContainerEl) reportContainerEl.style.display = 'block';
+    const chatContainerEl = document.getElementById('chatContainer');
+    if (chatContainerEl) chatContainerEl.style.display = 'block';
+
+    // 恢复聊天记录（先清空，避免和上一份混在一起）
+    const chatMessagesEl = document.getElementById('chatMessages');
+    if (chatMessagesEl) chatMessagesEl.innerHTML = '';
+    (session.messages || []).forEach((m) => addChatMessage(m.content, m.role === 'user'));
+
+    showDownloadPanels();
+    enableDownloadButtons();
+    renderSessionList();
+    closeSessionSidebar();
+  };
+
+  const newSession = () => {
+    currentSessionId = null;
+    lastReportMarkdown = '';
+    downloadLinkData = null;
+    sessionLog = [];
+
+    const taskEl = document.getElementById('task');
+    if (taskEl) taskEl.value = '';
+
+    const outputEl = document.getElementById('output');
+    if (outputEl) outputEl.innerHTML = '';
+
+    const reportContainerEl = document.getElementById('reportContainer');
+    if (reportContainerEl) reportContainerEl.innerHTML = '';
+
+    const chatMessagesEl = document.getElementById('chatMessages');
+    if (chatMessagesEl) chatMessagesEl.innerHTML = '';
+
+    const chatContainerEl = document.getElementById('chatContainer');
+    if (chatContainerEl) chatContainerEl.style.display = 'none';
+
+    // 允许重新进入 initial 状态
+    lastUiState = null;
+    updateState('initial');
+
+    renderSessionList();
+    closeSessionSidebar();
+
+    if (taskEl) taskEl.focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const deleteSession = (id) => {
+    const session = chatSessions.find((s) => s.id === id);
+    if (!session) return;
+    if (!window.confirm(`确定删除对话「${session.title}」吗？`)) return;
+
+    chatSessions = chatSessions.filter((s) => s.id !== id);
+    if (currentSessionId === id) {
+      currentSessionId = null;
+      lastReportMarkdown = '';
+    }
+    persistSessions();
+    renderSessionList();
+  };
+
+  const openSessionSidebar = () => {
+    const sidebar = document.getElementById('sessionSidebar');
+    const backdrop = document.getElementById('sessionBackdrop');
+    if (sidebar) sidebar.classList.add('open');
+    if (backdrop) backdrop.classList.add('show');
+    document.body.classList.add('session-open');
+  };
+
+  const closeSessionSidebar = () => {
+    const sidebar = document.getElementById('sessionSidebar');
+    const backdrop = document.getElementById('sessionBackdrop');
+    if (sidebar) sidebar.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('show');
+    document.body.classList.remove('session-open');
+  };
+
+  const initSessionSidebar = () => {
+    loadSessions();
+    renderSessionList();
+
+    const openBtn = document.getElementById('sessionOpenBtn');
+    const collapseBtn = document.getElementById('sessionCollapseBtn');
+    const newBtn = document.getElementById('sessionNewBtn');
+    const backdrop = document.getElementById('sessionBackdrop');
+    const searchEl = document.getElementById('sessionSearch');
+
+    if (openBtn) openBtn.addEventListener('click', openSessionSidebar);
+    if (collapseBtn) collapseBtn.addEventListener('click', closeSessionSidebar);
+    if (backdrop) backdrop.addEventListener('click', closeSessionSidebar);
+    if (newBtn) newBtn.addEventListener('click', newSession);
+    if (searchEl) searchEl.addEventListener('input', renderSessionList);
+  };
+
   const init = () => {
     // Check if cookies are enabled
     checkCookiesEnabled();
@@ -263,6 +509,9 @@ const GPTResearcher = (() => {
     // 接管 PDF / Word 下载按钮（改为无状态 POST 导出）
     bindExportButtons();
     bindHistoryExport();
+
+    // 会话侧边栏（新建对话 / 会话列表 / 切换）
+    initSessionSidebar();
 
     // The download bar is now fixed in place with CSS
     // No need to set display property here
@@ -1158,12 +1407,16 @@ const GPTResearcher = (() => {
         showDownloadPanels();
         // 五个按钮全部可用：MD/JSON 由前端生成，PDF/Word 走任务式导出
         enableDownloadButtons();
+        // 把这个研究保存成一个会话（侧边栏里能看到、能点回来）
+        saveCurrentSession();
       } else if (data.type === 'path') {
         updateState('finished')
         // 两次 path 消息：第一次只有 md/json，第二次补齐 pdf/docx。
         // 用 Object.assign 合并，避免后到的消息把先到的链接覆盖成 undefined。
         downloadLinkData = Object.assign({}, downloadLinkData || {}, updateDownloadLink(data))
         isResearchActive = false;
+        // 链接到手后再落一次会话，保证侧边栏里的导出按钮可用
+        saveCurrentSession();
 
         // Get the current report_type
         const report_type = document.querySelector('select[name="report_type"]').value;
@@ -1207,6 +1460,8 @@ const GPTResearcher = (() => {
         // Add AI message to chat（逐字渲染，模拟流式）
         if (data.content) {
           addChatMessageTyping(data.content);
+          // AI 回答也记进当前会话，切回来能看到完整对话
+          appendSessionMessage('assistant', data.content);
         }
       }
     }
@@ -2229,6 +2484,8 @@ const GPTResearcher = (() => {
 
     // Add user message to chat
     addChatMessage(message, true);
+    // 用户提问也记进当前会话
+    appendSessionMessage('user', message);
 
     // Clear input
     chatInput.value = '';
@@ -2238,7 +2495,18 @@ const GPTResearcher = (() => {
     const loadingId = addLoadingIndicator();
 
     // Prepare the message to send
-    const messageToSend = `chat ${JSON.stringify({ message: message })}`;
+    // 带上当前会话的正文与历史：
+    //   report   —— 后端据此限定回答范围（原来只发 message，模型只能瞎猜/联网）
+    //   messages —— 多轮上下文，切回旧会话也能接着问，不用重复前面的内容
+    const activeSession = chatSessions.find((s) => s.id === currentSessionId);
+    const historyMessages = ((activeSession && activeSession.messages) || [])
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    const messageToSend = `chat ${JSON.stringify({
+      message: message,
+      report: lastReportMarkdown || reportContent || '',
+      messages: historyMessages.length ? historyMessages : undefined,
+    })}`;
 
     // Send message through WebSocket
     if (socket && socket.readyState === WebSocket.OPEN) {
