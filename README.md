@@ -12,6 +12,10 @@
 
 ### 界面预览
 
+研究报告与导出（左上角 ☰ 是会话侧边栏，底栏为四项导出）：
+
+![主界面](docs/screenshots/main-ui.png)
+
 Word 预览页（浏览器不能原生渲染 `.docx`，所以把同一份正文渲染成排版好的网页，顶部提供下载原件与打印存 PDF）：
 
 ![Word 预览页](docs/screenshots/word-preview.png)
