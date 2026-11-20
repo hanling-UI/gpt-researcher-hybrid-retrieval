@@ -55,6 +55,9 @@ pyyaml>=6.0.1
 jinja2>=3.1.6
 loguru>=0.7.2
 colorama>=0.4.6
+# utils/logger.py 顶层 import click。setup.py 的 exclude_packages 会把 uvicorn 等
+# 排除出 install_requires，CI 里就没有任何包顺带装它，import 检查会挂。
+click>=8.1.7
 
 # Output Formats
 md2pdf>=1.0.1
