@@ -262,15 +262,8 @@
 
     <div class="session-backdrop" id="sessionBackdrop"></div>
 
-    <!-- Navigation Buttons (moved from top bar) -->
-    <div class="nav-buttons">
-        <div id="websocketPanelOpenBtn" class="top-websocket-button">
-            <i class="fas fa-network-wired"></i> 状态
-        </div>
-        <div id="historyPanelOpenBtn" class="top-history-button">
-            <i class="fas fa-history"></i> 历史
-        </div>
-    </div>
+    <!-- 右侧“状态/历史”按钮已移除：会话侧边栏已覆盖这两项需求 -->
+    <div class="nav-buttons" style="display: none;"></div>
 
     <!-- WebSocket Status Panel -->
     <div class="websocket-panel" id="websocketPanel">
@@ -483,9 +476,6 @@
             </h2>
             <!-- Add download buttons above the report container -->
             <div class="report-actions" style="display: none;">
-                <a id="downloadLinkTop" href="#" class="report-action-btn disabled" target="_blank" rel="noopener noreferrer">
-                    <i class="fas fa-file-pdf"></i> PDF
-                </a>
                 <a id="downloadLinkWordTop" href="#" class="report-action-btn disabled" target="_blank" rel="noopener noreferrer">
                     <i class="fas fa-file-word"></i> Word
                 </a>
@@ -557,9 +547,6 @@
             </a>
             <a id="downloadLinkMd" href="#" class="download-option-btn disabled" target="_blank" rel="noopener noreferrer">
                 <i class="fas fa-file-lines"></i> Markdown
-            </a>
-            <a id="downloadLink" href="#" class="download-option-btn disabled" target="_blank" rel="noopener noreferrer">
-                <i class="fas fa-file-pdf"></i> PDF
             </a>
             <a id="downloadLinkWord" href="#" class="download-option-btn disabled" target="_blank" rel="noopener noreferrer">
                 <i class="fas fa-file-word"></i> Word

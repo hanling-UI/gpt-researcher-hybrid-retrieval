@@ -55,7 +55,7 @@ const GPTResearcher = (() => {
 
   // Markdown：纯前端生成，永远可用（不依赖服务端文件）
   const downloadMarkdown = () => {
-    const markdown = lastReportMarkdown || reportContent || '';
+    const markdown = lastReportMarkdown || '';
     if (!markdown.trim()) {
       showToast('报告正文还没准备好，请等报告生成完');
       return;
@@ -82,7 +82,7 @@ const GPTResearcher = (() => {
   //   PDF  → 浏览器 PDF 阅读器（自带保存/打印按钮）
   //   Word → 网页预览页（顶部有"下载 Word"和"打印/另存为 PDF"）
   const exportReport = async (format, markdownOverride) => {
-    const markdown = markdownOverride || lastReportMarkdown || reportContent || '';
+    const markdown = markdownOverride || lastReportMarkdown || '';
     if (!markdown || markdown.trim().length < 20) {
       showToast('报告正文还没准备好，请等报告生成完再试');
       return;
@@ -306,7 +306,7 @@ const GPTResearcher = (() => {
 
   // 研究完成时保存/更新当前会话（正文 + 下载链接 + 时间）
   const saveCurrentSession = () => {
-    const markdown = lastReportMarkdown || reportContent || '';
+    const markdown = lastReportMarkdown || '';
     if (!markdown.trim()) return;
 
     const taskEl = document.getElementById('task');
@@ -333,6 +333,7 @@ const GPTResearcher = (() => {
 
     persistSessions();
     renderSessionList();
+    pushSessionsToServer();
   };
 
   // 追问的每条消息也记进当前会话，切回来能看到完整对话
@@ -392,6 +393,15 @@ const GPTResearcher = (() => {
     downloadLinkData = null;
     sessionLog = [];
 
+    // 彻底复位运行态：否则上一次研究残留的连接/标记会让新研究"卡住"
+    isResearchActive = false;
+    lastRequestData = null;
+    historySaved = false;
+    if (typeof dispose_socket === 'function') {
+      try { dispose_socket(); } catch (e) { /* 忽略关闭异常 */ }
+    }
+    dispose_socket = null;
+
     const taskEl = document.getElementById('task');
     if (taskEl) taskEl.value = '';
 
@@ -430,6 +440,7 @@ const GPTResearcher = (() => {
     }
     persistSessions();
     renderSessionList();
+    pushSessionsToServer();
   };
 
   const openSessionSidebar = () => {
@@ -448,9 +459,46 @@ const GPTResearcher = (() => {
     document.body.classList.remove('session-open');
   };
 
+  // 把会话同步到服务端（localStorage 仍是主存储，服务端是备份）
+  const pushSessionsToServer = () => {
+    fetch('/api/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessions: chatSessions }),
+    }).catch((e) => console.warn('会话同步到服务端失败:', e));
+  };
+
+  // 启动时把服务端会话合并进来（按 id 去重，更新时间新的优先）
+  const pullSessionsFromServer = async () => {
+    try {
+      const response = await fetch('/api/sessions');
+      if (!response.ok) return;
+      const data = await response.json();
+      const remote = Array.isArray(data.sessions) ? data.sessions : [];
+      if (!remote.length) return;
+
+      const merged = new Map();
+      [...chatSessions, ...remote].forEach((s) => {
+        if (!s || !s.id) return;
+        const prev = merged.get(s.id);
+        const newer = !prev || new Date(s.updatedAt || 0) > new Date(prev.updatedAt || 0);
+        if (newer) merged.set(s.id, s);
+      });
+
+      chatSessions = Array.from(merged.values()).sort(
+        (a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+      );
+      persistSessions();
+      renderSessionList();
+    } catch (e) {
+      console.warn('从服务端拉取会话失败:', e);
+    }
+  };
+
   const initSessionSidebar = () => {
     loadSessions();
     renderSessionList();
+    pullSessionsFromServer();
 
     const openBtn = document.getElementById('sessionOpenBtn');
     const collapseBtn = document.getElementById('sessionCollapseBtn');
@@ -1286,6 +1334,14 @@ const GPTResearcher = (() => {
 
     historySaved = false;
     sessionLog = [];
+
+    // 关键：清掉上一次的请求数据。
+    // 连接建立时有一段"重连保护"（isResearchActive && lastRequestData 就不发 start），
+    // 而 updateState('in_progress') 会把 isResearchActive 置 true。
+    // 同一页面里第二次研究时，残留的 lastRequestData 会让保护误判为"重连"，
+    // start 永远不发 —— 表现就是卡在 "Gathering information..."。
+    lastRequestData = null;
+
     updateState('in_progress')
 
     addAgentResponse({
@@ -1429,22 +1485,24 @@ const GPTResearcher = (() => {
 
         // Save to history now that research is complete
         // 两次 path 消息只保存一次历史（否则同一条研究会进两条历史记录）
-        if (reportContent && downloadLinkData && !historySaved) {
-          historySaved = true;
-          saveToHistory(reportContent, downloadLinkData);
-        } else if (historySaved && data.output) {
-          // 第二次 path（补齐 pdf/docx）到了：更新刚才那条历史记录，
-          // 否则历史里的条目会缺 PDF/Word 链接。
-          updateLatestHistoryLinks(data.output);
+        if (data.output) {
+          if (!historySaved && reportContent && downloadLinkData) {
+            historySaved = true;
 
-          // 正文留一份给导出用，再清空本轮累积变量
-          lastReportMarkdown = reportContent;
+            // 正文先留一份给导出和会话，再清空本轮累积变量。
+            // 不清空的话，下一轮研究会把上一轮的正文一起带上：
+            // 历史重复、会话串台、正文越积越大导致后续操作变慢。
+            lastReportMarkdown = reportContent;
+            saveToHistory(reportContent, downloadLinkData);
 
-          // Reset variables for next research session
-          reportContent = '';
-          allReports = '';
-          currentReport = '';
-          isFirstReport = true;
+            reportContent = '';
+            allReports = '';
+            currentReport = '';
+            isFirstReport = true;
+          } else if (historySaved) {
+            // 后续 path（补齐链接）只更新历史条目里的链接
+            updateLatestHistoryLinks(data.output);
+          }
         }
 
         // Update WebSocket status
@@ -2504,7 +2562,7 @@ const GPTResearcher = (() => {
 
     const messageToSend = `chat ${JSON.stringify({
       message: message,
-      report: lastReportMarkdown || reportContent || '',
+      report: lastReportMarkdown || '',
       messages: historyMessages.length ? historyMessages : undefined,
     })}`;
 

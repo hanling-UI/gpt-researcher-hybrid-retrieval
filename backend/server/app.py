@@ -360,6 +360,65 @@ async def export_preview(job_id: str):
     )
 
 
+# ==================== 会话持久化 ====================
+# 浏览器 localStorage 只在本机生效；这里再落一份到服务器，
+# 换浏览器/换设备时也能拉回来。
+# 注意：Render 免费层没有持久磁盘，重新部署会清空 data/ 目录。
+_SESSIONS_FILE = Path("data/sessions.json")
+
+
+def _load_sessions_file() -> list:
+    try:
+        if _SESSIONS_FILE.exists():
+            data = json.loads(_SESSIONS_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("读取会话文件失败：%s", exc)
+    return []
+
+
+def _save_sessions_file(items: list) -> None:
+    _SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _SESSIONS_FILE.write_text(
+        json.dumps(items, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+@app.get("/api/sessions")
+async def list_sessions():
+    """返回服务端保存的会话列表（按更新时间倒序）。"""
+    items = _load_sessions_file()
+    items.sort(key=lambda s: str(s.get("updatedAt") or s.get("createdAt") or ""), reverse=True)
+    return {"sessions": items}
+
+
+@app.post("/api/sessions")
+async def save_sessions(payload: dict):
+    """整体保存会话列表（单用户场景，后写覆盖先写）。"""
+    sessions = payload.get("sessions")
+    if not isinstance(sessions, list):
+        raise HTTPException(status_code=400, detail="sessions 必须是数组")
+
+    # 只保留必要字段，避免把任意内容写进磁盘
+    cleaned = []
+    for item in sessions[:200]:
+        if not isinstance(item, dict):
+            continue
+        cleaned.append({
+            "id": str(item.get("id") or ""),
+            "title": str(item.get("title") or "未命名研究")[:120],
+            "report": str(item.get("report") or ""),
+            "messages": item.get("messages") if isinstance(item.get("messages"), list) else [],
+            "links": item.get("links") if isinstance(item.get("links"), dict) else {},
+            "createdAt": item.get("createdAt") or "",
+            "updatedAt": item.get("updatedAt") or "",
+        })
+
+    _save_sessions_file(cleaned)
+    return {"ok": True, "count": len(cleaned)}
+
+
 @app.get("/api/export/{stem}")
 async def export_report(stem: str, format: str = "pdf"):
     """按需把 outputs/<stem>.md 转换成 pdf/docx 并返回。
