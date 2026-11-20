@@ -1,12 +1,99 @@
-> **This is a fork of [gpt-researcher](https://github.com/assafelovic/gpt-researcher).**
-> The retrieval pipeline (hybrid search, RRF fusion, reranking, offline evaluation)
-> is reworked by me. See [EVAL.md](EVAL.md) for evaluation results.
-> **This is a fork of [gpt-researcher](https://github.com/assafelovic/gpt-researcher).**
-> The retrieval pipeline (hybrid search, RRF fusion, reranking, offline evaluation)
-> is reworked by me. See [EVAL.md](EVAL.md) for evaluation results.
+> **Fork of [assafelovic/gpt-researcher](https://github.com/assafelovic/gpt-researcher).**
+> 本仓库在其基础上重构了 RAG 检索链路：数据清洗 → BM25 + 向量双路召回 → 手写 RRF 融合 → 重排截断。
+> 评测方法与结果见 [EVAL.md](EVAL.md)。
 
-**Live Demo:** https://gpt-researcher-hybrid-retrieval.onrender.com
-*(free tier — first request may take ~50s to wake up)*
+## 🚀 在线 Demo
+
+**https://gpt-researcher-hybrid-retrieval.onrender.com**
+
+> Render 免费实例：首次访问约 50 秒冷启动；PDF / Word 首次生成需 1~3 分钟（0.1 核 CPU 渲染），之后直接命中缓存。
+
+界面为中文。左侧会话栏可**新建 / 切换 / 删除**对话，切回旧对话可继续追问；报告支持复制、Markdown、JSON 日志、Word 预览（预览页可另存为 PDF）。
+
+---
+
+## 与上游的差异
+
+| 模块 | 上游 | 本二创 |
+|---|---|---|
+| 抓取后清洗 | 简单去噪 | `scraper/cleaning.py`：模板行过滤、跨页重复检测、元信息块裁剪、分块去重 |
+| 召回 | 单一向量或 keyword | **BM25（jieba 分词）+ 向量**双路召回，`context/hybrid.py` |
+| 融合 | 无 | **手写 RRF `1/(60+rank)`**，不做分数归一化 |
+| 重排 | 无 | `context/rerank.py`：Top20 → qwen3-rerank → **Top3** 送入模型 |
+| 评测 | 无 | `eval_context.py` 固定语料回放，语义覆盖率 + 预算对齐 |
+| 前端 | 英文静态页 + Next.js | 中文静态页 + 会话侧边栏 |
+| 部署 | 需自行配置 | Render 一键部署 + 精简 Dockerfile |
+
+## 检索链路
+
+```
+搜索 → 抓取网页 → 清洗去重（cleaning.py）
+                      │
+         ┌────────────┴────────────┐
+         ▼                         ▼
+   BM25 召回                  向量召回
+ (jieba 中文分词)        (text-embedding-v4, 1024 维)
+         └────────────┬────────────┘
+                      ▼
+             RRF 融合  1/(60+rank)
+                      ▼
+         重排 qwen3-rerank → Top3
+                      ▼
+              拼入 Prompt → 写作
+```
+
+设计要点：
+
+- **为什么用 RRF 而不是加权分数**：BM25 分数无上界，余弦相似度在 [-1,1]，量纲不同、分布不同，直接加权需要归一化和调参，跨查询不稳定；RRF 只用名次，天然免疫量纲问题。
+- **k=60 的含义**：抑制头部权重，让第 1 名和第 2 名的差距不至于压倒长尾，是业界常用默认值。
+- **为什么不引入 faiss / chroma 做持久索引**：单次研究的候选块只有几十到几百，内存里算 BM25 与余弦足够；引入向量库会增加部署体积和延迟，收益在这个量级下不明显。
+
+## 评测结果
+
+固定语料回放（同一批网页，只改排序策略），5 个查询平均，预算对齐 2000 字符：
+
+| 模式 | 平均字符 | 语义覆盖 | 平均耗时 |
+|---|---|---|---|
+| none（全量塞入） | 25492 | 0.712 | — |
+| keyword（上游默认） | 9937 | 0.733 | 0.21s |
+| embeddings | 10001 | 0.742 | 15.16s |
+| hybrid | 1721 | 0.755 | 1.86s |
+| **hybrid + rerank** | **1703** | **0.764** | 2.56s |
+
+上下文压缩 **93%**（25492 → 1703 字符），语义覆盖 0.712 → 0.764，5 个查询上均不低于上游 keyword。
+
+> 诚实说明：重排相对 hybrid 仅 **+0.009**（2/5 略优、3/5 持平），样本量小，只能说方向正确、幅度有限；候选池仅 20~85 块时 RRF 已经足够好，重排的价值需要更大候选池才能体现。
+
+## 部署（Render 免费层）
+
+- Runtime：Docker（根目录 `Dockerfile`，含 pango / CJK 字体，去掉浏览器）
+- 环境变量：
+
+```
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+FAST_LLM=openai:qwen-flash
+SMART_LLM=openai:qwen-plus
+STRATEGIC_LLM=openai:qwen-max
+TAVILY_API_KEY=...
+RETRIEVER=tavily
+EMBEDDING=custom:text-embedding-v4
+CONTEXT_FILTER=hybrid
+RERANK_BACKEND=dashscope
+RERANK_TOP_K=3
+LANGUAGE=chinese
+```
+
+> ⚠️ **不要设置 `WEB_PROXY`**：云端容器访问不到你本机的代理，设了会导致所有抓取失败。
+
+## 已知限制
+
+- **PDF 慢**：WeasyPrint 在 0.1 核免费实例上渲染中文长报告需 1~3 分钟；已改为「点击时按需生成 + 轮询进度」，不会阻塞界面。
+- **会话持久化**：主存浏览器 `localStorage`，另存服务端 `data/sessions.json`；免费层无持久磁盘，重新部署会清空服务端那份（浏览器里的不受影响）。
+- **评测样本小**：仅 5 个查询，用于看趋势，不足以做显著性结论。
+- **上游 CI 的 `imports` 作业**：`gpt_researcher/utils/logger.py` 顶层 `import click`，但上游 `requirements.txt` 未声明，`setup.py` 又排除了 `uvicorn`（本机靠它顺带装上 click），属上游遗留问题，与本二创无关。
+
+---
 
 <div align="center" id="top">
 
@@ -46,7 +133,11 @@ The agent produces detailed, factual, and unbiased research reports with citatio
 - Limited web sources in existing services lead to misinformation and shallow results.
 - Selective web sources can introduce bias into research tasks.
 
-## Demo
+## Demo（上游原版界面）
+
+> 下面是**上游原项目**的演示视频，用的是英文 Next.js 界面。
+> 本二创的界面是中文静态版（带会话侧边栏），请在页面顶部的在线 Demo 里体验。
+
 <a href="https://www.youtube.com/watch?v=f60rlc_QCxE" target="_blank" rel="noopener">
   <img src="https://github.com/user-attachments/assets/ac2ec55f-b487-4b3f-ae6f-b8743ad296e4" alt="Demo video" width="800" target="_blank" />
 </a>
