@@ -2,27 +2,43 @@
 > 本仓库在其基础上重构了 RAG 检索链路：数据清洗 → BM25 + 向量双路召回 → 手写 RRF 融合 → 重排截断。
 > 评测方法与结果见 [EVAL.md](EVAL.md)，**一页纸项目说明见 [docs/PROJECT.md](docs/PROJECT.md)**。
 
-## 🚀 在线 Demo
+## 演示
 
-**https://gpt-researcher-hybrid-retrieval.onrender.com**
+> 演示实例为控制 API 成本已暂停。需要在线体验可联系我获取访问方式；下面的截图与"如何运行"足以复现全部功能。
 
-> Render 免费实例：首次访问约 50 秒冷启动；PDF / Word 首次生成需 1~3 分钟（0.1 核 CPU 渲染），之后直接命中缓存。
+完整流程：输入问题 → 实时进度 → 生成报告 → 侧边栏切换会话 → 针对报告追问 → 导出 Word / Markdown / JSON。
 
-界面为中文。左侧会话栏可**新建 / 切换 / 删除**对话，切回旧对话可继续追问；报告支持复制、Markdown、JSON 日志、Word 预览（预览页可另存为 PDF）。
+**1. 研究报告与导出**
 
-### 界面预览
-
-研究报告与导出（左上角 ☰ 是会话侧边栏，底栏为四项导出）：
+左上角 ☰ 是会话侧边栏（新建 / 切换 / 删除 / 搜索），底栏为四项导出：复制、Markdown、JSON 日志、Word。
 
 ![主界面](docs/screenshots/main-ui.png)
 
-Word 预览页（浏览器不能原生渲染 `.docx`，所以把同一份正文渲染成排版好的网页，顶部提供下载原件与打印存 PDF）：
+**2. 针对报告追问**
+
+提问会带上该会话的报告正文与历史，支持多轮；切回旧会话可继续问，不用重复前文。
+
+![追问](docs/screenshots/chat-followup.png)
+
+**3. 导出 Word（浏览器内预览）**
+
+浏览器不能原生渲染 `.docx`，所以把同一份正文渲染成排版好的网页，顶部提供「下载 Word」与「打印 / 另存为 PDF」。
 
 ![Word 预览页](docs/screenshots/word-preview.png)
 
-针对报告继续追问（回答会带上该会话的报告正文与历史）：
+---
 
-![追问](docs/screenshots/chat-followup.png)
+## 如何运行
+
+```bash
+git clone https://github.com/hanling-UI/gpt-researcher-hybrid-retrieval.git
+cd gpt-researcher-hybrid-retrieval
+pip install -r requirements.txt
+cp .env.example .env      # 填入自己的 OPENAI_API_KEY / TAVILY_API_KEY
+python main.py            # 打开 http://localhost:8000
+```
+
+需要自己的 API Key（阿里云百炼或任意 OpenAI 兼容接口），不提供公共 Key。
 
 ---
 
@@ -78,7 +94,9 @@ Word 预览页（浏览器不能原生渲染 `.docx`，所以把同一份正文�
 
 > 诚实说明：重排相对 hybrid 仅 **+0.009**（2/5 略优、3/5 持平），样本量小，只能说方向正确、幅度有限；候选池仅 20~85 块时 RRF 已经足够好，重排的价值需要更大候选池才能体现。
 
-## 部署（Render 免费层）
+## 部署（Render 免费层，可选）
+
+演示实例为控制 API 成本已暂停；以下配置用于自行部署。
 
 - Runtime：Docker（根目录 `Dockerfile`，含 pango / CJK 字体，去掉浏览器）
 - 环境变量：
@@ -87,8 +105,8 @@ Word 预览页（浏览器不能原生渲染 `.docx`，所以把同一份正文�
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 FAST_LLM=openai:qwen-flash
-SMART_LLM=openai:qwen-plus
-STRATEGIC_LLM=openai:qwen-max
+SMART_LLM=openai:qwen-flash     # 演示用便宜模型；追求质量可换 qwen-plus
+STRATEGIC_LLM=openai:qwen-flash # 原 qwen-max 单次成本高一个数量级
 TAVILY_API_KEY=...
 RETRIEVER=tavily
 EMBEDDING=custom:text-embedding-v4
@@ -99,6 +117,12 @@ LANGUAGE=chinese
 ```
 
 > ⚠️ **不要设置 `WEB_PROXY`**：云端容器访问不到你本机的代理，设了会导致所有抓取失败。
+
+## 成本说明
+
+- 每次研究约调用 4 类计费接口：`text-embedding-v4`（向量化）、`qwen3-rerank`（重排）、`qwen-flash/plus/max`（规划与写作）、Tavily（搜索）。
+- 用 `qwen-flash` 跑一次完整报告约 **0.05~0.1 元**；用 `qwen-max` 会高一个数量级。
+- 想进一步省钱：`CONTEXT_FILTER=keyword`（不调 embedding）、`RERANK_BACKEND=none`（不调重排）、把 `max_search_results` 调小。
 
 ## 已知限制
 

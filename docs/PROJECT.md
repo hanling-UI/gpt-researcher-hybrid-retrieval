@@ -4,7 +4,8 @@
 > 目标是**在不砍掉原有功能的前提下**，把 RAG 检索链路做成工业级的四段式：
 > 数据清洗 → 混合召回 → RRF 融合 → 精排截断。
 
-在线 Demo：https://gpt-researcher-hybrid-retrieval.onrender.com
+仓库：https://github.com/hanling-UI/gpt-researcher-hybrid-retrieval
+（演示实例为控制 API 成本已暂停，需要在线体验可联系获取访问方式）
 
 ---
 
@@ -82,12 +83,13 @@ NFKC 会把中文全角标点（，：（））转成半角，破坏中文排版
 ## 7. 怎么验证
 
 ```bash
-# 单元测试（不联网、秒级）
-python -m pytest tests/test_retrieval_hybrid.py -q
-
-# 离线评测（首次会抓取并落盘，之后只换排序策略）
+# 离线评测（首次抓取并落盘，之后只换排序策略）
 python eval_context.py --collect
 python eval_context.py
+
+# 本地起服务
+cp .env.example .env    # 填入自己的 OPENAI_API_KEY / TAVILY_API_KEY
+python main.py          # http://localhost:8000
 ```
 
-在线 Demo 直接打开即可：输入问题 → 看进度 → 报告 → 侧边栏切会话 → 追问 → 导出。
+本地界面上完整走一遍：输入问题 → 看进度 → 报告 → 侧边栏切会话 → 追问 → 导出 Word / Markdown / JSON。
