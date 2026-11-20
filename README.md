@@ -1,6 +1,6 @@
 > **Fork of [assafelovic/gpt-researcher](https://github.com/assafelovic/gpt-researcher).**
 > 本仓库在其基础上重构了 RAG 检索链路：数据清洗 → BM25 + 向量双路召回 → 手写 RRF 融合 → 重排截断。
-> 评测方法与结果见 [EVAL.md](EVAL.md)。
+> 评测方法与结果见 [EVAL.md](EVAL.md)，**一页纸项目说明见 [docs/PROJECT.md](docs/PROJECT.md)**。
 
 ## 🚀 在线 Demo
 
@@ -9,6 +9,16 @@
 > Render 免费实例：首次访问约 50 秒冷启动；PDF / Word 首次生成需 1~3 分钟（0.1 核 CPU 渲染），之后直接命中缓存。
 
 界面为中文。左侧会话栏可**新建 / 切换 / 删除**对话，切回旧对话可继续追问；报告支持复制、Markdown、JSON 日志、Word 预览（预览页可另存为 PDF）。
+
+### 界面预览
+
+Word 预览页（浏览器不能原生渲染 `.docx`，所以把同一份正文渲染成排版好的网页，顶部提供下载原件与打印存 PDF）：
+
+![Word 预览页](docs/screenshots/word-preview.png)
+
+针对报告继续追问（回答会带上该会话的报告正文与历史）：
+
+![追问](docs/screenshots/chat-followup.png)
 
 ---
 
