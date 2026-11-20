@@ -36,10 +36,51 @@ const GPTResearcher = (() => {
   // 记录上一次 UI 状态：report_finished 与 path 都会调用 updateState('finished')，
   // 重复进入会重复 initChat()——清空聊天记录、重复绑定发送按钮（点一次发两次）。
   let lastUiState = null;
+  // 本次运行收到的所有消息，用来在浏览器端生成 JSON 日志（不依赖服务端文件）
+  let sessionLog = [];
 
   // 通过 POST 把正文交给服务端即时转换（无状态导出）
-  // 通过"提交任务 + 轮询"导出 PDF/Word：
-  // 生成任务在后台跑，每个请求都是毫秒级，不会撞上平台的反向代理超时。
+  // 统一的 blob 下载
+  const downloadBlob = (content, filename, mime) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  };
+
+  // Markdown：纯前端生成，永远可用（不依赖服务端文件）
+  const downloadMarkdown = () => {
+    const markdown = lastReportMarkdown || reportContent || '';
+    if (!markdown.trim()) {
+      showToast('报告正文还没准备好，请等报告生成完');
+      return;
+    }
+    downloadBlob(markdown, 'report.md', 'text/markdown;charset=utf-8');
+    showToast('Markdown 已下载');
+  };
+
+  // JSON 日志：用本次运行在前端累积的事件生成，永远可用
+  const downloadJson = () => {
+    if (!sessionLog.length) {
+      showToast('本次运行还没有可导出的日志');
+      return;
+    }
+    const payload = {
+      timestamp: sessionLog[0].timestamp,
+      events: sessionLog.map((item) => item.data),
+    };
+    downloadBlob(JSON.stringify(payload, null, 2), 'report.json', 'application/json;charset=utf-8');
+    showToast('JSON 日志已下载');
+  };
+
+  // PDF / Word：提交后台任务 → 轮询 → 打开结果
+  //   PDF  → 浏览器 PDF 阅读器（自带保存/打印按钮）
+  //   Word → 网页预览页（顶部有"下载 Word"和"打印/另存为 PDF"）
   const exportReport = async (format, markdownOverride) => {
     const markdown = markdownOverride || lastReportMarkdown || reportContent || '';
     if (!markdown || markdown.trim().length < 20) {
@@ -48,12 +89,13 @@ const GPTResearcher = (() => {
     }
 
     const label = format === 'pdf' ? 'PDF' : 'Word';
-    // PDF 要在点击的同步阶段先开窗口，否则弹窗拦截器会挡掉
-    const previewWindow = format === 'pdf' ? window.open('', '_blank') : null;
-
-    showToast(`正在生成 ${label}，首次可能需要 1~3 分钟…`, 6000);
+    // 必须在点击的同步阶段就把标签页开出来，否则会被弹窗拦截
+    const previewWindow = window.open('', '_blank');
     if (previewWindow) {
-      previewWindow.document.write('<p style="font-family:sans-serif;padding:2rem">正在生成 PDF，请稍候…</p>');
+      previewWindow.document.write(
+        '<p style="font-family:-apple-system,\'Segoe UI\',sans-serif;padding:2rem;color:#333">'
+        + '正在生成 ' + label + '，首次可能需要 1~3 分钟，请稍候…</p>'
+      );
     }
 
     try {
@@ -73,43 +115,34 @@ const GPTResearcher = (() => {
 
       const { job_id: jobId } = await submit.json();
 
-      // 轮询任务状态，最多等 5 分钟
       const deadline = Date.now() + 5 * 60 * 1000;
       let status = 'running';
+      let lastError = '';
+
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         const poll = await fetch(`/api/export/job/${jobId}`);
         if (!poll.ok) break;
         const info = await poll.json();
         status = info.status;
-        if (status !== 'running') {
-          if (status === 'failed') {
-            if (previewWindow) previewWindow.close();
-            showToast(`生成失败：${info.error || '未知错误'}`);
-          }
-          break;
-        }
+        lastError = info.error || '';
+        if (status !== 'running') break;
       }
 
       if (status !== 'done') {
         if (previewWindow) previewWindow.close();
-        if (status === 'running') showToast('生成超时，请稍后重试或改用 Markdown');
+        showToast(status === 'running'
+          ? '生成超时，请稍后重试或改用 Markdown'
+          : `生成失败：${lastError || '未知错误'}`);
         return;
       }
 
-      const fileUrl = `/api/export/file/${jobId}`;
-      if (format === 'pdf') {
-        if (previewWindow) previewWindow.location = fileUrl;
-        else window.open(fileUrl, '_blank');
-      } else {
-        const link = document.createElement('a');
-        link.href = fileUrl;
-        link.download = 'report.docx';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      }
-      showToast(`${label} 已就绪`);
+      const target = format === 'pdf'
+        ? `/api/export/file/${jobId}`        // 浏览器 PDF 阅读器：可预览、可保存
+        : `/api/export/preview/${jobId}`;    // Word 网页预览：可预览、可下载原件
+
+      if (previewWindow) previewWindow.location = target;
+      else window.open(target, '_blank');
     } catch (error) {
       console.error('导出失败:', error);
       if (previewWindow) previewWindow.close();
@@ -117,7 +150,22 @@ const GPTResearcher = (() => {
     }
   };
 
-  // 历史面板里的 PDF/Word：用事件委托处理，正文从 localStorage 取
+  // 把五个按钮全部解锁（报告结束时调用）
+  const enableDownloadButtons = () => {
+    const ids = [
+      'copyToClipboard',
+      'downloadLinkMd', 'downloadLinkMdTop',
+      'downloadLinkJson', 'downloadLinkJsonTop',
+      'downloadLink', 'downloadLinkTop',
+      'downloadLinkWord', 'downloadLinkWordTop',
+    ];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('disabled');
+    });
+  };
+
+  // 历史面板：PDF/Word 用事件委托，正文从 localStorage 取
   const bindHistoryExport = () => {
     const panel = document.getElementById('historyPanel');
     if (!panel || panel.dataset.exportBound === '1') return;
@@ -142,21 +190,26 @@ const GPTResearcher = (() => {
     });
   };
 
-  // 把 PDF / Word 按钮接管掉（顶栏 2 个 + 底栏 2 个）
+  // 接管五个按钮
   const bindExportButtons = () => {
     const bindings = [
-      ['downloadLink', 'pdf'],
-      ['downloadLinkTop', 'pdf'],
-      ['downloadLinkWord', 'docx'],
-      ['downloadLinkWordTop', 'docx'],
+      ['downloadLink', () => exportReport('pdf')],
+      ['downloadLinkTop', () => exportReport('pdf')],
+      ['downloadLinkWord', () => exportReport('docx')],
+      ['downloadLinkWordTop', () => exportReport('docx')],
+      ['downloadLinkMd', downloadMarkdown],
+      ['downloadLinkMdTop', downloadMarkdown],
+      ['downloadLinkJson', downloadJson],
+      ['downloadLinkJsonTop', downloadJson],
     ];
-    bindings.forEach(([id, format]) => {
+    bindings.forEach(([id, handler]) => {
       const el = document.getElementById(id);
       if (!el || el.dataset.exportBound === '1') return;
       el.dataset.exportBound = '1';
       el.addEventListener('click', (event) => {
         event.preventDefault();
-        exportReport(format);
+        if (el.classList.contains('disabled')) return;
+        handler();
       });
     });
   };
@@ -978,6 +1031,7 @@ const GPTResearcher = (() => {
     imageContainer.style.display = 'none'
 
     historySaved = false;
+    sessionLog = [];
     updateState('in_progress')
 
     addAgentResponse({
@@ -1051,6 +1105,11 @@ const GPTResearcher = (() => {
       }
       console.log("Received message:", data);  // Debug log
 
+      // 累积本次运行的事件，JSON 按钮用它在前端生成文件
+      if (sessionLog.length < 3000) {
+        sessionLog.push({ timestamp: new Date().toISOString(), data: data });
+      }
+
       // Update WebSocket metrics
       messagesReceived++;
       lastActivityTime = Date.now();
@@ -1088,7 +1147,12 @@ const GPTResearcher = (() => {
         // 否则在免费实例上（0.1 CPU）PDF 要渲染几分钟，页面会一直卡在
         // "研究进行中"：转圈、聊天框不显示、下载条不出来。
         updateState('finished');
+        // 报告正文此时已经收完，先存一份给导出/预览用；
+        // 不依赖后面的 path 消息（那条要等文件生成，可能晚几十秒）。
+        lastReportMarkdown = reportContent || lastReportMarkdown;
         showDownloadPanels();
+        // 五个按钮全部可用：MD/JSON 由前端生成，PDF/Word 走任务式导出
+        enableDownloadButtons();
       } else if (data.type === 'path') {
         updateState('finished')
         // 两次 path 消息：第一次只有 md/json，第二次补齐 pdf/docx。

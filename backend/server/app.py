@@ -195,15 +195,22 @@ async def read_report(request: Request, research_id: str):
 
 # Simplified API routes - no database persistence
 _EXPORT_JOBS: dict[str, dict] = {}
+_EXPORT_JOB_LIMIT = 20  # 只保留最近 20 个任务，避免内存无限增长
+
+
+def _remember_job(job_id: str, payload: dict) -> None:
+    _EXPORT_JOBS[job_id] = payload
+    if len(_EXPORT_JOBS) > _EXPORT_JOB_LIMIT:
+        for old in list(_EXPORT_JOBS.keys())[: len(_EXPORT_JOBS) - _EXPORT_JOB_LIMIT]:
+            _EXPORT_JOBS.pop(old, None)
 
 
 @app.post("/api/export")
 async def start_export(payload: ExportRequest):
-    """提交一个导出任务，**立刻返回** job_id。
+    """提交导出任务，立刻返回 job_id。
 
-    为什么不在请求里直接生成：免费实例只有 0.1 CPU，中文 PDF 要渲染几分钟，
-    同步请求会撞上平台的反向代理超时（表现为 502 / 一直转圈）。
-    改成"提交任务 + 轮询"，每个请求都是毫秒级，永远不会超时。
+    免费实例只有 0.1 CPU，中文 PDF 要渲染几分钟。同步请求会撞上反向代理超时
+    （表现为 502/白屏）。改成"提交任务 + 轮询"，每个请求都是毫秒级。
     """
     text = payload.markdown or ""
     if len(text.strip()) < 20:
@@ -216,7 +223,14 @@ async def start_export(payload: ExportRequest):
     import uuid
 
     job_id = uuid.uuid4().hex[:16]
-    _EXPORT_JOBS[job_id] = {"status": "running", "path": "", "error": ""}
+    _remember_job(job_id, {
+        "status": "running",
+        "path": "",
+        "error": "",
+        "format": fmt,
+        "markdown": text,          # 预览页要用
+        "title": payload.title or "report",
+    })
 
     async def _run() -> None:
         try:
@@ -226,7 +240,7 @@ async def start_export(payload: ExportRequest):
                 _EXPORT_JOBS[job_id].update(status="done", path=path)
             else:
                 _EXPORT_JOBS[job_id].update(status="failed", error=f"{fmt.upper()} 生成失败")
-        except Exception as exc:  # noqa: BLE001 - 任务失败只记录，不抛出
+        except Exception as exc:  # noqa: BLE001
             _EXPORT_JOBS[job_id].update(status="failed", error=str(exc))
 
     asyncio.create_task(_run())
@@ -235,7 +249,6 @@ async def start_export(payload: ExportRequest):
 
 @app.get("/api/export/job/{job_id}")
 async def export_job_status(job_id: str):
-    """查询导出任务状态：running / done / failed。"""
     job = _EXPORT_JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="任务不存在或已过期")
@@ -244,7 +257,7 @@ async def export_job_status(job_id: str):
 
 @app.get("/api/export/file/{job_id}")
 async def export_job_file(job_id: str):
-    """任务完成后取文件。PDF 内联预览，DOCX 作为附件下载。"""
+    """PDF 内联预览；DOCX 作为附件下载。"""
     job = _EXPORT_JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="任务不存在或已过期")
@@ -261,6 +274,89 @@ async def export_job_file(job_id: str):
         target,
         filename="report.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+_PREVIEW_TEMPLATE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} - Word 预览</title>
+<style>
+  :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin: 0; background: #525659; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }}
+  .toolbar {{
+    position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px; background: #202124; color: #e8eaed; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }}
+  .toolbar .name {{ flex: 1; font-size: 14px; opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .btn {{
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px;
+    background: #0b57d0; color: #fff; text-decoration: none; font-size: 14px; border: none; cursor: pointer;
+  }}
+  .btn:hover {{ background: #0842a0; }}
+  .btn.secondary {{ background: #3c4043; }}
+  .btn.secondary:hover {{ background: #4a4e51; }}
+  .paper {{
+    max-width: 820px; margin: 24px auto 64px; background: #fff; padding: 64px 72px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.35); line-height: 1.9; color: #1a1a1a;
+    font-family: Georgia, "Times New Roman", "Songti SC", "SimSun", serif; font-size: 16px;
+  }}
+  .paper h1 {{ font-size: 26px; line-height: 1.5; margin: 0 0 24px; }}
+  .paper h2 {{ font-size: 20px; margin: 32px 0 14px; }}
+  .paper h3 {{ font-size: 17px; margin: 24px 0 10px; }}
+  .paper p {{ margin: 12px 0; text-align: justify; }}
+  .paper table {{ width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }}
+  .paper th, .paper td {{ border: 1px solid #d0d0d0; padding: 8px 10px; text-align: left; }}
+  .paper th {{ background: #f3f4f6; }}
+  .paper a {{ color: #0b57d0; word-break: break-all; }}
+  .paper blockquote {{ margin: 16px 0; padding-left: 14px; border-left: 3px solid #d0d0d0; color: #555; }}
+  .hint {{ max-width: 820px; margin: 16px auto 0; color: #cfd2d6; font-size: 13px; text-align: center; }}
+  @media print {{
+    .toolbar, .hint {{ display: none; }}
+    body {{ background: #fff; }}
+    .paper {{ box-shadow: none; margin: 0; padding: 0; max-width: none; }}
+  }}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <span class="name">{title}</span>
+  <a class="btn" href="/api/export/file/{job_id}">下载 Word (.docx)</a>
+  <button class="btn secondary" onclick="window.print()">打印 / 另存为 PDF</button>
+</div>
+<div class="paper">{body}</div>
+<p class="hint">这是 Word 文档的网页预览效果，点上方按钮可下载 .docx 原件。</p>
+</body>
+</html>"""
+
+
+@app.get("/api/export/preview/{job_id}", response_class=HTMLResponse)
+async def export_preview(job_id: str):
+    """Word 的网页预览页。
+
+    浏览器无法原生预览 .docx，所以这里把同一份 Markdown 渲染成排好版的网页，
+    顶部给"下载 Word"和"打印/另存为 PDF"两个按钮——效果等价于 PDF 预览器的保存按钮。
+    """
+    job = _EXPORT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    if job["status"] != "done":
+        raise HTTPException(status_code=409, detail=f"任务未完成（当前 {job['status']}）")
+
+    import html as html_module
+
+    import mistune
+
+    body_html = mistune.html(job.get("markdown", ""))
+    return HTMLResponse(
+        _PREVIEW_TEMPLATE.format(
+            title=html_module.escape(job.get("title") or "report"),
+            job_id=job_id,
+            body=body_html,
+        )
     )
 
 
