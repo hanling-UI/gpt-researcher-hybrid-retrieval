@@ -170,6 +170,11 @@ const GPTResearcher = (() => {
     const panel = document.getElementById('historyPanel');
     if (!panel || panel.dataset.exportBound === '1') return;
     panel.dataset.exportBound = '1';
+    // 关键：第三个参数 true = **捕获阶段**。
+    // 历史条目自身绑了 loadResearchEntry（点一下就把那条研究加载进表单并重置界面），
+    // 它挂在条目元素上、在冒泡阶段先于面板执行——所以用户点导出按钮时，
+    // 界面会先被"清零"，然后才轮到导出。捕获阶段先拦截并 stopPropagation，
+    // 条目自身的处理器就不会再触发。
     panel.addEventListener('click', (event) => {
       const target = event.target.closest('[data-format][data-md-key]');
       if (!target) return;
@@ -187,7 +192,7 @@ const GPTResearcher = (() => {
         return;
       }
       exportReport(format, markdown);
-    });
+    }, true);
   };
 
   // 接管五个按钮
@@ -778,8 +783,8 @@ const GPTResearcher = (() => {
           ${timestampHTML}
         </div>
         <div class="history-entry-format">
-          ${links.pdf ? `<a href="#" data-md-key="${entry.mdKey || ''}" data-format="pdf" class="history-entry-action" title="生成并预览 PDF"><i class="fas fa-file-pdf"></i> PDF</a>` : ''}
-          ${links.docx ? `<a href="#" data-md-key="${entry.mdKey || ''}" data-format="docx" class="history-entry-action" title="生成并下载 Word"><i class="fas fa-file-word"></i> Word</a>` : ''}
+          ${links.pdf && entry.mdKey ? `<a href="#" data-md-key="${entry.mdKey}" data-format="pdf" class="history-entry-action" title="生成并预览 PDF"><i class="fas fa-file-pdf"></i> PDF</a>` : ''}
+          ${links.docx && entry.mdKey ? `<a href="#" data-md-key="${entry.mdKey}" data-format="docx" class="history-entry-action" title="生成并下载 Word"><i class="fas fa-file-word"></i> Word</a>` : ''}
           ${links.md ? `<a href="${links.md}" class="history-entry-action" target="_blank" title="打开 Markdown 文件"><i class="fas fa-file-lines"></i> MD</a>` : ''}
           ${links.json ? `<a href="${links.json}" class="history-entry-action" target="_blank" title="打开 JSON 数据"><i class="fas fa-file-code"></i> JSON</a>` : ''}
         </div>
@@ -1199,9 +1204,9 @@ const GPTResearcher = (() => {
           loadingElements[loadingElements.length - 1].remove();
         }
 
-        // Add AI message to chat
+        // Add AI message to chat（逐字渲染，模拟流式）
         if (data.content) {
-          addChatMessage(data.content, false);
+          addChatMessageTyping(data.content);
         }
       }
     }
@@ -2292,6 +2297,61 @@ const GPTResearcher = (() => {
     // Scroll to bottom
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
+
+  // 逐字渲染 AI 回复（模拟流式输出）。
+  //
+  // 为什么不在后端做真流式：后端的 chat 走 process_chat_completion 的工具调用
+  // 链路，改成真流式要重写那部分（会动到已经稳定工作的代码）。这里在渲染层
+  // 做渐进显示，视觉一致、零风险：先按纯文本逐字出，结束后替换成渲染好的 HTML。
+  const addChatMessageTyping = (message) => {
+    const chatMessages = document.getElementById('chatMessages');
+    if (!chatMessages) return;
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'chat-message ai-message';
+
+    const bodyEl = document.createElement('div');
+    messageEl.appendChild(bodyEl);
+
+    const timestampEl = document.createElement('div');
+    timestampEl.className = 'chat-timestamp';
+    timestampEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    messageEl.appendChild(timestampEl);
+
+    chatMessages.appendChild(messageEl);
+
+    const converter = new showdown.Converter({
+      ghCodeBlocks: true,
+      tables: true,
+      tasklists: true,
+      openLinksInNewWindow: true,
+    });
+    const fullHtml = converter.makeHtml(message);
+
+    const cursor = document.createElement('span');
+    cursor.textContent = '▌';
+    cursor.style.opacity = '0.65';
+
+    // 约 2 秒播完：按消息长度动态算每帧字符数
+    const step = Math.max(1, Math.ceil(message.length / 120));
+    let index = 0;
+
+    const tick = () => {
+      index = Math.min(message.length, index + step);
+      bodyEl.textContent = message.slice(0, index);
+      bodyEl.appendChild(cursor);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      if (index < message.length) {
+        setTimeout(tick, 16);
+      } else {
+        cursor.remove();
+        bodyEl.innerHTML = fullHtml;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    };
+    tick();
+  };
 
   // Add a loading indicator
   const addLoadingIndicator = () => {
