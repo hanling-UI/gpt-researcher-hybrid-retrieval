@@ -4,7 +4,8 @@
 
 ## 演示
 
-> 演示实例为控制 API 成本已暂停。需要在线体验可联系我获取访问方式；下面的截图与"如何运行"足以复现全部功能。
+> **演示实例在线，但需要访问口令**：每次研究都会调用付费模型接口，公开无门槛会被刷爆额度。
+> 需要体验请通过 GitHub Issue 或邮件联系我获取口令；也可以按下方「如何运行」在本地跑，用你自己的 Key。
 
 完整流程：输入问题 → 实时进度 → 生成报告 → 侧边栏切换会话 → 针对报告追问 → 导出 Word / Markdown / JSON。
 
@@ -96,12 +97,14 @@ python main.py            # 打开 http://localhost:8000
 
 ## 部署（Render 免费层，可选）
 
-演示实例为控制 API 成本已暂停；以下配置用于自行部署。
+演示实例在线，访问需要口令。以下配置用于自行部署。
 
 - Runtime：Docker（根目录 `Dockerfile`，含 pango / CJK 字体，去掉浏览器）
 - 环境变量：
 
 ```
+ACCESS_PASSWORD=自己设一个口令        # 必填，否则站点公开（本地开发可不设）
+DAILY_RESEARCH_LIMIT=10              # 每天最多几次研究，<=0 表示不限制
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 FAST_LLM=openai:qwen-flash
@@ -118,10 +121,24 @@ LANGUAGE=chinese
 
 > ⚠️ **不要设置 `WEB_PROXY`**：云端容器访问不到你本机的代理，设了会导致所有抓取失败。
 
+### 访问控制（防止额度被刷）
+
+后端已内置两道闸，**不设 `ACCESS_PASSWORD` 时自动关闭**，本地开发不受影响：
+
+| 变量 | 作用 | 默认 |
+|---|---|---|
+| `ACCESS_PASSWORD` | 进站口令；未设置则站点公开 | 空（关闭门禁） |
+| `DAILY_RESEARCH_LIMIT` | 每日研究次数上限，超出直接拦下且**不会触发任何 API 调用** | 10 |
+
+- 口令校验走 cookie（HttpOnly、SHA-256 令牌，不存明文）
+- WebSocket 与 HTTP 接口都会校验，绕过网页直接连接口同样被拒
+- 访问 `/logout` 可清除口令 cookie
+
 ## 成本说明
 
 - 每次研究约调用 4 类计费接口：`text-embedding-v4`（向量化）、`qwen3-rerank`（重排）、`qwen-flash/plus/max`（规划与写作）、Tavily（搜索）。
 - 用 `qwen-flash` 跑一次完整报告约 **0.05~0.1 元**；用 `qwen-max` 会高一个数量级。
+- 有了口令与每日上限，最坏情况：`DAILY_RESEARCH_LIMIT × 0.1` 元/天。
 - 想进一步省钱：`CONTEXT_FILTER=keyword`（不调 embedding）、`RERANK_BACKEND=none`（不调重排）、把 `max_search_results` 调小。
 
 ## 已知限制

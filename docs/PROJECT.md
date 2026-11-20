@@ -5,7 +5,7 @@
 > 数据清洗 → 混合召回 → RRF 融合 → 精排截断。
 
 仓库：https://github.com/hanling-UI/gpt-researcher-hybrid-retrieval
-（演示实例为控制 API 成本已暂停，需要在线体验可联系获取访问方式）
+（演示实例在线，需访问口令；口令用于控制 API 成本，联系获取）
 
 ---
 

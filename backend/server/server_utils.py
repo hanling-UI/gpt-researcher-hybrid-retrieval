@@ -20,6 +20,12 @@ except ImportError:  # pragma: no cover - legacy sys.path-shimmed import
     from utils import write_md_to_pdf, write_md_to_word, write_text_to_md
 from pathlib import Path
 from datetime import datetime
+
+# 访问控制模块也要兼容两种导入路径（backend.server.* 与 server.*）
+try:
+    from backend.server import access
+except ImportError:  # pragma: no cover - legacy sys.path-shimmed import
+    from server import access
 from fastapi import HTTPException, WebSocketDisconnect
 import logging
 import hashlib
@@ -133,6 +139,18 @@ def sanitize_filename(filename: str) -> str:
 
 async def handle_start_command(websocket, data: str, manager):
     json_data = json.loads(data[6:])
+
+    # 每日研究次数上限：每次研究都会调用付费模型接口，演示站必须封顶。
+    # 未配置 ACCESS_PASSWORD 时 access.consume() 直接放行（本地开发不受影响）。
+    allowed, remaining = access.consume()
+    if not allowed:
+        await websocket.send_json({
+            "type": "logs",
+            "output": access.limit_message(),
+            "content": access.limit_message(),
+        })
+        return
+
     (
         task,
         report_type,

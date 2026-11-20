@@ -17,13 +17,14 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, File, Uplo
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
 # Add the parent directory to sys.path to make sure we can import from server
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 from server.websocket_manager import WebSocketManager
+from server import access
 from server.server_utils import (
     get_config_dict, sanitize_filename,
     update_environment_variables, handle_file_upload, handle_file_deletion,
@@ -132,6 +133,58 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# 访问口令：未设置 ACCESS_PASSWORD 时整段逻辑自动失效（本地开发不受影响）
+# ---------------------------------------------------------------------------
+_PUBLIC_PATHS = ("/login", "/logout", "/favicon.ico")
+
+
+@app.middleware("http")
+async def access_gate(request: Request, call_next):
+    if access.gate_enabled():
+        path = request.url.path
+        if not (path in _PUBLIC_PATHS or path.startswith("/site/") or path.startswith("/static/")):
+            if not access.is_valid_token(request.cookies.get(access.COOKIE_NAME)):
+                if path.startswith("/api/"):
+                    return JSONResponse({"detail": "需要访问口令"}, status_code=401)
+                return HTMLResponse(access.login_page(), status_code=401)
+    return await call_next(request)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_form(request: Request):
+    if not access.gate_enabled() or access.is_valid_token(request.cookies.get(access.COOKIE_NAME)):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(access.login_page())
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    form = await request.form()
+    password = str(form.get("password") or "")
+    if not access.check_password(password):
+        return HTMLResponse(access.login_page("口令不正确，请重试。"), status_code=401)
+
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        key=access.COOKIE_NAME,
+        value=access.token_for(password.strip()),
+        max_age=access.COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+    )
+    return response
+
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(access.COOKIE_NAME)
+    return response
+
 
 # Use default JSON response class
 
@@ -687,6 +740,10 @@ async def delete_file(filename: str):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # 口令校验：WebSocket 不经过 HTTP 中间件，必须在这里自己查 cookie
+    if access.gate_enabled() and not access.is_valid_token(websocket.cookies.get(access.COOKIE_NAME)):
+        await websocket.close(code=1008)
+        return
     await manager.connect(websocket)
     try:
         await handle_websocket_communication(websocket, manager)
